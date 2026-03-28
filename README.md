@@ -131,9 +131,10 @@ For the current Spark no-cost setup:
 
 1. Enable Email/Password in Firebase Authentication.
 2. Create operator accounts manually in Firebase Authentication.
-3. Sign in from the Flutter web app with that email and password.
+3. Make sure each operator email is verified, either by having the user click Firebase's verification email or by marking it verified in Firebase.
+4. Sign in from the Flutter web app with that email and password.
 
-The included `firestore.rules` and `storage.rules` allow any authenticated Firebase user to use the app's current realtime data path.
+The included `firestore.rules` and `storage.rules` now require a signed-in Firebase user with a verified email before the live realtime data path is available.
 
 If you later add custom claims or the FastAPI backend admin routes, you can tighten these rules back down to admin-only access.
 

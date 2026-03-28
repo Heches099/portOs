@@ -21,13 +21,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isHovering = false;
 
   @override
-  void initState() {
-    super.initState();
-    _operatorController.text = 'admin@portos.io';
-    _accessKeyController.text = 'password';
-  }
-
-  @override
   void dispose() {
     _operatorController.dispose();
     _accessKeyController.dispose();
@@ -342,7 +335,9 @@ class _LoginPanel extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                'Operator accounts are created manually in Firebase Console. Self-service registration is disabled.',
+                authProvider.isDemoMode
+                    ? 'Operator accounts are created manually in Firebase Console. Self-service registration is disabled.'
+                    : 'Operator accounts are created manually in Firebase Console. Verified email is required before live access is granted.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white54,
                       height: 1.45,
@@ -384,7 +379,7 @@ class _LoginPanel extends StatelessWidget {
               Text(
                 authProvider.isDemoMode
                     ? 'Demo mode is active. Supply Firebase config to enable live Auth and Firestore streams.'
-                    : 'Authenticated operators can issue synchronized command-center actions through Firebase and FastAPI-backed flows.',
+                    : 'Only Firebase-authenticated operators with verified email can reach the live command-center data path.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white60,
                       height: 1.5,

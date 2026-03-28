@@ -37,4 +37,5 @@ uvicorn backed:app --reload --host 0.0.0.0 --port 8000
 
 - Self-service registration is disabled in the Flutter app.
 - Password reset is allowed only for already registered Firebase emails.
-- `firestore.rules` and `storage.rules` are locked to admin users only.
+- Verified email is required before the Flutter app grants live Firebase access.
+- Backend admin APIs still require verified admin users, while `firestore.rules` and `storage.rules` currently allow verified Firebase operators.

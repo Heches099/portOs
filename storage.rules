@@ -1,12 +1,13 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function signedIn() {
-      return request.auth != null;
+    function verifiedOperator() {
+      return request.auth != null &&
+          request.auth.token.email_verified == true;
     }
 
     match /{allPaths=**} {
-      allow read, write: if signedIn();
+      allow read, write: if verifiedOperator();
     }
   }
 }

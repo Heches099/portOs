@@ -13,7 +13,7 @@ class AuthProvider extends ChangeNotifier {
         _user = user;
         _hasAdminClaim = false;
 
-        if (user != null) {
+        if (user != null && user.emailVerified) {
           try {
             final tokenResult = await user.getIdTokenResult();
             _hasAdminClaim = tokenResult.claims?['admin'] == true;
@@ -36,11 +36,12 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
 
   bool get isAuthenticated =>
-      _firebaseEnabled ? _user != null : _demoEmail != null;
+      _firebaseEnabled ? _user != null && isEmailVerified : _demoEmail != null;
   bool get isLoading => _isLoading;
   bool get isDemoMode => !_firebaseEnabled;
   String? get statusMessage => _statusMessage;
   String? get currentEmail => _firebaseEnabled ? _user?.email : _demoEmail;
+  bool get isEmailVerified => !_firebaseEnabled || (_user?.emailVerified ?? false);
   bool get isAdmin {
     if (_firebaseEnabled) {
       return _hasAdminClaim;
@@ -74,8 +75,29 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
-      _user = result.user;
-      final tokenResult = await result.user?.getIdTokenResult();
+      final user = result.user;
+      if (user == null) {
+        throw Exception('Firebase did not return an operator account.');
+      }
+
+      await user.reload();
+      final refreshedUser = auth.currentUser;
+      if (refreshedUser == null) {
+        throw Exception('Firebase authentication could not be refreshed.');
+      }
+
+      _user = refreshedUser;
+      if (!refreshedUser.emailVerified) {
+        await _sendVerificationEmail(refreshedUser);
+        await auth.signOut();
+        _user = null;
+        _hasAdminClaim = false;
+        throw Exception(
+          'Email not verified yet. A Firebase verification link was sent to ${refreshedUser.email ?? email}.',
+        );
+      }
+
+      final tokenResult = await refreshedUser.getIdTokenResult(true);
       _hasAdminClaim = tokenResult?.claims?['admin'] == true;
       return true;
     } on FirebaseAuthException catch (e) {
@@ -90,11 +112,17 @@ class AuthProvider extends ChangeNotifier {
         case 'invalid-email':
           message = 'The email address is badly formatted.';
           break;
+        case 'too-many-requests':
+          message = 'Too many sign-in attempts. Please wait a moment and try again.';
+          break;
         default:
           message = 'Sign in failed. Please try again.';
       }
       throw Exception(message);
-    } catch (_) {
+    } catch (error) {
+      if (error is Exception) {
+        rethrow;
+      }
       throw Exception(
         _firebaseEnabled
             ? 'An unexpected error occurred.'
@@ -103,6 +131,14 @@ class AuthProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _sendVerificationEmail(User user) async {
+    try {
+      await user.sendEmailVerification();
+    } catch (_) {
+      // Email verification remains required even if the helper send fails.
     }
   }
 
