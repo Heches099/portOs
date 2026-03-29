@@ -1276,7 +1276,7 @@ class _CommandHero extends StatelessWidget {
                   ),
                 ),
                 child: const Text(
-                  'LIVE OPERATIONS NEXUS',
+                  'LIVE PORT OPERATIONS ',
                   style: TextStyle(
                     color: Color(0xFFBAE6FD),
                     fontSize: 11,

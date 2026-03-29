@@ -98,7 +98,7 @@ class AuthProvider extends ChangeNotifier {
       }
 
       final tokenResult = await refreshedUser.getIdTokenResult(true);
-      _hasAdminClaim = tokenResult?.claims?['admin'] == true;
+      _hasAdminClaim = tokenResult.claims?['admin'] == true;
       return true;
     } on FirebaseAuthException catch (e) {
       String message;
