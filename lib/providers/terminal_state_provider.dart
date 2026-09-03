@@ -48,15 +48,12 @@ class TerminalStateProvider extends ChangeNotifier {
         _syncState = TerminalSyncState.live;
         _connectionMessage = _apiService.isUsingFirebaseData
             ? 'Firestore telemetry sync active.'
-            : (_apiService.isUsingPlaceholderBackend
-                ? 'Demo telemetry active. Ready to swap to Firestore snapshots.'
-                : 'FastAPI and Firestore sync active.');
+            : 'Firebase telemetry is unavailable.';
         notifyListeners();
       },
       onError: (_) {
         _syncState = TerminalSyncState.degraded;
-        _connectionMessage =
-            'Realtime sync degraded. Falling back to cached telemetry.';
+        _connectionMessage = 'Realtime telemetry sync degraded.';
         notifyListeners();
       },
     );

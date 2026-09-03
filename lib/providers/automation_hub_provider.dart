@@ -16,7 +16,6 @@ import 'operations_repository.dart';
 
 class AutomationHubProvider extends ChangeNotifier {
   AutomationHubProvider() {
-    _seedHistoricalSnapshots();
     _hydrate();
     unawaited(refreshDiagnostics());
     _diagnosticsTimer = Timer.periodic(
@@ -282,48 +281,6 @@ class AutomationHubProvider extends ChangeNotifier {
     );
   }
 
-  void _seedHistoricalSnapshots() {
-    if (_snapshots.isNotEmpty) {
-      return;
-    }
-
-    final now = DateTime.now();
-    final random = math.Random(23);
-
-    for (var day = 365; day >= 3; day--) {
-      final timestamp = now.subtract(Duration(days: day));
-      _snapshots.add(
-        _OperationalSnapshot(
-          timestamp: timestamp,
-          completedContainers: 82 + random.nextInt(46),
-          queuedContainers: 6 + random.nextInt(9),
-          activeAlerts: 1 + random.nextInt(4),
-          operatorNotices: 1 + random.nextInt(5),
-          averageBatteryLevel: 61 + random.nextDouble() * 24,
-          efficiency: 91 + random.nextDouble() * 8,
-          teuCounter: 12000 + random.nextInt(2400),
-        ),
-      );
-    }
-
-    for (var hours = 72; hours >= 0; hours -= 2) {
-      final timestamp = now.subtract(Duration(hours: hours));
-      final wave = math.sin(hours / 8);
-      _snapshots.add(
-        _OperationalSnapshot(
-          timestamp: timestamp,
-          completedContainers: 5 + random.nextInt(7) + wave.abs().round(),
-          queuedContainers: 2 + random.nextInt(4) + (wave > 0 ? 1 : 0),
-          activeAlerts: 1 + random.nextInt(3),
-          operatorNotices: 1 + random.nextInt(4),
-          averageBatteryLevel: 58 + random.nextDouble() * 28,
-          efficiency: 94 + random.nextDouble() * 4,
-          teuCounter: 13800 + random.nextInt(700),
-        ),
-      );
-    }
-  }
-
   DateTime _windowStart(ReportWindow window, DateTime now) {
     switch (window) {
       case ReportWindow.hours:
@@ -433,6 +390,7 @@ class AutomationHubProvider extends ChangeNotifier {
             ConnectivityResult.vpn => 'VPN',
             ConnectivityResult.wifi => 'Wi-Fi',
             ConnectivityResult.other => 'Other',
+            ConnectivityResult.satellite => 'Satellite',
             ConnectivityResult.none => 'Offline',
           },
         )

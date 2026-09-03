@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: portos-backend
+    runtime: python
+    plan: starter
+    buildCommand: |
+      pip install -r requirements-backend.txt
+      python -c "import torch, ultralytics; print('infra ok')" || true
+    startCommand: uvicorn backed:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: BACKED_FIREBASE_PROJECT_ID
+        sync: false
+      - key: BACKED_FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: BACKED_ADMIN_EMAILS
+        sync: false
+      - key: BACKED_INGEST_API_KEY
+        sync: false
+      - key: BACKED_CORS_ORIGINS
+        value: "https://portos-nextgen.vercel.app,http://localhost:3000,http://localhost:5173,http://localhost:8080"
+      - key: BACKED_FIREBASE_SERVICE_ACCOUNT_B64
+        sync: false
+      # Optional: use a file-based credential instead of the base64 env var.
+      # - key: BACKED_FIREBASE_SERVICE_ACCOUNT_PATH
+      #   value: "./firebase-service-account.json"

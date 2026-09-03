@@ -51,6 +51,7 @@ app.*.map.json
 .env.local
 .env.local.*
 !.env.local.example
+.env.firebase.json
 .venv/
 venv/
 __pycache__/

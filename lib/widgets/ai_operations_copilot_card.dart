@@ -308,7 +308,9 @@ Give a practical response that combines automation guidance with human fallback.
 
     for (final camera in widget.operations.cameraFeeds) {
       if (promptLower.contains(camera.id.toLowerCase())) {
-        final alert = camera.alert == null ? 'No camera alert is recorded.' : 'Alert: ${camera.alert}.';
+        final alert = camera.alert == null
+            ? 'No camera alert is recorded.'
+            : 'Alert: ${camera.alert}.';
         return 'Camera ${camera.id} at ${camera.location} is ${camera.isOnline ? 'online' : 'offline'} with ${camera.viewers} viewers. $alert';
       }
     }
@@ -357,8 +359,7 @@ Give a practical response that combines automation guidance with human fallback.
 
   String _craneResponse() {
     final cranes = widget.operations.cranes.toList(growable: true)
-      ..sort((left, right) =>
-          right.utilization.compareTo(left.utilization));
+      ..sort((left, right) => right.utilization.compareTo(left.utilization));
     final top = cranes.take(2).map((item) {
       return '${item.id} ${item.utilization.toStringAsFixed(0)}% under ${item.operatorName}';
     }).join(', ');
@@ -445,7 +446,7 @@ Give a practical response that combines automation guidance with human fallback.
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI OPERATIONS COPILOT',
+                      'Auto port system',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
@@ -467,7 +468,7 @@ Give a practical response that combines automation guidance with human fallback.
               _AiStatusChip(
                 label: GeminiService.isConfigured
                     ? 'Gemini via Firebase'
-                    : 'Local demo fallback',
+                    : 'Local analysis',
                 accent: GeminiService.isConfigured
                     ? const Color(0xFF2DD4BF)
                     : const Color(0xFFF59E0B),

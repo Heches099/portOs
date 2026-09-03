@@ -37,6 +37,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   _CommandPage _currentPage = _CommandPage.dashboard;
+  final Set<_CommandPage> _visitedPages = {_CommandPage.dashboard};
+
+  void _selectPage(_CommandPage page) {
+    setState(() {
+      _currentPage = page;
+      _visitedPages.add(page);
+    });
+  }
 
   @override
   void initState() {
@@ -120,21 +128,24 @@ class _HomeScreenState extends State<HomeScreen> {
               onRefresh: _refreshCommandCenter,
             ),
             Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 340),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: KeyedSubtree(
-                  key: ValueKey(_currentPage),
-                  child: _buildPageView(
-                    page: _currentPage,
-                    terminal: terminal,
-                    operations: operations,
-                    notifications: notifications,
-                    auth: auth,
-                    theme: theme,
-                  ),
-                ),
+              // Keep every operational page mounted. In particular, this keeps
+              // the browser/device camera stream alive while an operator checks
+              // another page and then returns to the vision wall.
+              child: IndexedStack(
+                index: _currentPage.index,
+                children: [
+                  for (final page in _CommandPage.values)
+                    _visitedPages.contains(page)
+                        ? _buildPageView(
+                            page: page,
+                            terminal: terminal,
+                            operations: operations,
+                            notifications: notifications,
+                            auth: auth,
+                            theme: theme,
+                          )
+                        : const SizedBox.shrink(),
+                ],
               ),
             ),
           ],
@@ -153,9 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             _CommandSidebar(
                               currentPage: _currentPage,
-                              onPageSelected: (page) {
-                                setState(() => _currentPage = page);
-                              },
+                              onPageSelected: _selectPage,
                               onSignOut: _signOut,
                             ),
                             const SizedBox(width: 16),
@@ -168,9 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 16),
                             _MobileNavigationBar(
                               currentPage: _currentPage,
-                              onPageSelected: (page) {
-                                setState(() => _currentPage = page);
-                              },
+                              onPageSelected: _selectPage,
                             ),
                           ],
                         ),
@@ -491,7 +498,7 @@ class _VesselOperationsView extends StatelessWidget {
   }
 }
 
-class _CctvView extends StatelessWidget {
+class _CctvView extends StatefulWidget {
   const _CctvView({
     required this.terminal,
     required this.operations,
@@ -503,73 +510,206 @@ class _CctvView extends StatelessWidget {
   final NotificationProvider notifications;
 
   @override
+  State<_CctvView> createState() => _CctvViewState();
+}
+
+class _CctvViewState extends State<_CctvView> {
+  bool _deviceCameraConnected = false;
+
+  void _connectSource(_VisionSource source) {
+    if (source == _VisionSource.device) {
+      setState(() => _deviceCameraConnected = true);
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${source.label} sources appear in this wall after their camera feed is added to Firestore.',
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final feeds = operations.cameraFeeds;
-    final primaryFeed = feeds.isNotEmpty ? feeds.first : null;
+    final feeds = widget.operations.cameraFeeds;
+    final wallFeeds = <CameraFeed>[
+      if (_deviceCameraConnected)
+        CameraFeed(
+          id: 'local-device-camera',
+          title: 'USB / DEVICE CAMERA',
+          location: 'This workstation',
+          isOnline: true,
+          viewers: 1,
+          lastUpdated: DateTime.now(),
+        ),
+      ...feeds.where((feed) => feed.id != 'local-device-camera'),
+    ].take(4).toList(growable: false);
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 1100;
-        final tileWidth = constraints.maxWidth < 760
-            ? constraints.maxWidth
-            : (constraints.maxWidth - 20) / 2;
+        final isDesktopWall = constraints.maxWidth >= 900;
+        final desktopColumns = wallFeeds.length >= 4
+            ? 4
+            : wallFeeds.length >= 3
+                ? 3
+                : wallFeeds.length >= 2
+                    ? 2
+                    : 1;
 
-        return SingleChildScrollView(
+        final wall = wallFeeds.isEmpty
+            ? const Center(
+                child: Text(
+                  'No camera feeds are available yet.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              )
+            : GridView.builder(
+                padding: EdgeInsets.zero,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  // A CCTV wall uses one row on desktop so all configured
+                  // sources remain visible without scrolling.
+                  crossAxisCount: isDesktopWall ? desktopColumns : 1,
+                  crossAxisSpacing: 14,
+                  mainAxisSpacing: 14,
+                  childAspectRatio: isDesktopWall ? 1.35 : 1.15,
+                ),
+                itemCount: wallFeeds.length,
+                itemBuilder: (context, index) {
+                  final feed = wallFeeds[index];
+                  // The first panel is the live, permission-backed device
+                  // preview; the remaining panels form the CCTV wall from the
+                  // configured Firestore camera sources.
+                  if (index == 0) {
+                    if (_deviceCameraConnected) {
+                      return _VisionSpotlightCard(
+                        feed: feed,
+                        liveSources: widget.terminal.stats.liveSources,
+                      );
+                    }
+                  }
+                  return _CctvStreamCard(feed: feed);
+                },
+              );
+
+        if (!isDesktopWall) {
+          return Column(
+            children: [
+              _VisionWallToolbar(
+                feedCount: wallFeeds.length,
+                onSourceSelected: _connectSource,
+              ),
+              const SizedBox(height: 12),
+              Expanded(child: wall),
+            ],
+          );
+        }
+
+        return Padding(
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (primaryFeed != null)
-                if (isCompact) ...[
-                  _VisionSpotlightCard(
-                    feed: primaryFeed,
-                    liveSources: terminal.stats.liveSources,
-                  ),
-                  const SizedBox(height: 20),
-                  _VisionEventsCard(
-                    notifications: notifications.items,
-                    feeds: feeds,
-                  ),
-                ] else
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 7,
-                        child: _VisionSpotlightCard(
-                          feed: primaryFeed,
-                          liveSources: terminal.stats.liveSources,
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        flex: 4,
-                        child: _VisionEventsCard(
-                          notifications: notifications.items,
-                          feeds: feeds,
-                        ),
-                      ),
-                    ],
-                  ),
-              const SizedBox(height: 20),
-              Wrap(
-                spacing: 20,
-                runSpacing: 20,
-                children: feeds
-                    .map(
-                      (feed) => SizedBox(
-                        width: tileWidth,
-                        child: _CctvStreamCard(feed: feed),
-                      ),
-                    )
-                    .toList(growable: false),
+              _VisionWallToolbar(
+                feedCount: wallFeeds.length,
+                onSourceSelected: _connectSource,
               ),
+              const SizedBox(height: 14),
+              Expanded(child: wall),
             ],
           ),
         );
       },
     );
   }
+}
+
+class _VisionWallToolbar extends StatelessWidget {
+  const _VisionWallToolbar({
+    required this.feedCount,
+    required this.onSourceSelected,
+  });
+
+  final int feedCount;
+  final ValueChanged<_VisionSource> onSourceSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(Icons.videocam_rounded, color: Color(0xFF2DD4BF)),
+        const SizedBox(width: 10),
+        const Text(
+          'CCTV WALL',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(width: 10),
+        _StatusChip(
+            label: '$feedCount sources', accent: const Color(0xFF2DD4BF)),
+        const Spacer(),
+        PopupMenuButton<_VisionSource>(
+          tooltip: 'Connect camera',
+          onSelected: onSourceSelected,
+          itemBuilder: (context) => [
+            for (final source in _VisionSource.values)
+              PopupMenuItem(
+                value: source,
+                child: Row(
+                  children: [
+                    Icon(source.icon, size: 20),
+                    const SizedBox(width: 10),
+                    Text(source.label),
+                  ],
+                ),
+              ),
+          ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2DD4BF),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add_rounded, color: Color(0xFF042F2E)),
+                SizedBox(width: 8),
+                Text(
+                  'Connect camera',
+                  style: TextStyle(
+                    color: Color(0xFF042F2E),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+enum _VisionSource { device, rtsp, onvif, nvr }
+
+extension on _VisionSource {
+  String get label => switch (this) {
+        _VisionSource.device => 'USB / this device',
+        _VisionSource.rtsp => 'IP / RTSP stream',
+        _VisionSource.onvif => 'ONVIF camera',
+        _VisionSource.nvr => 'NVR recorder',
+      };
+
+  IconData get icon => switch (this) {
+        _VisionSource.device => Icons.usb_rounded,
+        _VisionSource.rtsp => Icons.wifi_tethering_rounded,
+        _VisionSource.onvif => Icons.videocam_rounded,
+        _VisionSource.nvr => Icons.dns_rounded,
+      };
 }
 
 class _IoTView extends StatelessWidget {
@@ -967,9 +1107,9 @@ class _HeaderActions extends StatelessWidget {
                       letterSpacing: 1.2,
                     ),
                   ),
-                  Text(
-                    auth.isDemoMode ? 'demo operator' : 'authenticated',
-                    style: const TextStyle(
+                  const Text(
+                    'authenticated',
+                    style: TextStyle(
                       color: Colors.white54,
                       fontSize: 11,
                     ),
@@ -1062,15 +1202,21 @@ class _CommandSidebar extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 22),
-          for (final item in _navItems) ...[
-            _SidebarButton(
-              item: item,
-              active: currentPage == item.page,
-              onTap: () => onPageSelected(item.page),
+          Expanded(
+            child: ListView.separated(
+              padding: EdgeInsets.zero,
+              itemCount: _navItems.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final item = _navItems[index];
+                return _SidebarButton(
+                  item: item,
+                  active: currentPage == item.page,
+                  onTap: () => onPageSelected(item.page),
+                );
+              },
             ),
-            const SizedBox(height: 8),
-          ],
-          const Spacer(),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Divider(color: Colors.white.withValues(alpha: 0.08)),
@@ -2506,11 +2652,9 @@ class _OperatorConsoleCard extends StatelessWidget {
                         ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    auth.isDemoMode
-                        ? 'Demo command profile'
-                        : 'Authenticated operator',
-                    style: const TextStyle(color: Colors.white60),
+                  const Text(
+                    'Authenticated operator',
+                    style: TextStyle(color: Colors.white60),
                   ),
                 ],
               ),
@@ -2550,8 +2694,9 @@ class _StackReadinessCard extends StatelessWidget {
     final rows = [
       (
         'FastAPI orchestration',
-        apiService.isUsingPlaceholderBackend
-            ? 'connected placeholder stream'
+        apiService.backendBaseUrl.contains('127.0.0.1') ||
+                apiService.backendBaseUrl.contains('localhost')
+            ? 'local API endpoint'
             : 'configured API endpoint',
         const Color(0xFF60A5FA),
       ),
@@ -2571,7 +2716,7 @@ class _StackReadinessCard extends StatelessWidget {
       ),
       (
         'Firebase operator auth',
-        auth.isDemoMode ? 'waiting for Firebase config' : 'enabled',
+        auth.isAuthenticated ? 'enabled' : 'unavailable',
         const Color(0xFFFB7185),
       ),
     ];
@@ -2723,7 +2868,7 @@ class _SystemControlsCard extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           Text(
-            'Refresh keeps the visual shell in sync with the current provider-backed mock stream while you wire in real Firestore and FastAPI events.',
+            'Refresh requests the latest telemetry from the connected real-time systems.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white70,
                   height: 1.45,
@@ -4334,7 +4479,7 @@ String _pageTitle(_CommandPage page) {
     case _CommandPage.vessels:
       return 'Berth Orchestration';
     case _CommandPage.cctv:
-      return 'AI Vision Lattice';
+      return 'Auto port system';
     case _CommandPage.iot:
       return 'Autonomy Mesh';
     case _CommandPage.reports:

@@ -13,7 +13,7 @@ class AuthProvider extends ChangeNotifier {
         _user = user;
         _hasAdminClaim = false;
 
-        if (user != null && user.emailVerified) {
+        if (user != null) {
           try {
             final tokenResult = await user.getIdTokenResult();
             _hasAdminClaim = tokenResult.claims?['admin'] == true;
@@ -32,16 +32,14 @@ class AuthProvider extends ChangeNotifier {
   FirebaseAuth? _auth;
   User? _user;
   bool _hasAdminClaim = false;
-  String? _demoEmail;
   bool _isLoading = false;
 
-  bool get isAuthenticated =>
-      _firebaseEnabled ? _user != null && isEmailVerified : _demoEmail != null;
+  bool get isAuthenticated => _firebaseEnabled && _user != null;
+  bool get isFirebaseAvailable => _firebaseEnabled;
   bool get isLoading => _isLoading;
-  bool get isDemoMode => !_firebaseEnabled;
   String? get statusMessage => _statusMessage;
-  String? get currentEmail => _firebaseEnabled ? _user?.email : _demoEmail;
-  bool get isEmailVerified => !_firebaseEnabled || (_user?.emailVerified ?? false);
+  String? get currentEmail => _user?.email;
+  bool get isEmailVerified => _user?.emailVerified ?? false;
   bool get isAdmin {
     if (_firebaseEnabled) {
       return _hasAdminClaim;
@@ -51,9 +49,8 @@ class AuthProvider extends ChangeNotifier {
     return probe.contains('admin') || probe.contains('supervisor');
   }
 
-  String get displayName => _firebaseEnabled
-      ? _user?.displayName ?? _user?.email?.split('@').first ?? 'User'
-      : _demoEmail?.split('@').first ?? 'Operator';
+  String get displayName =>
+      _user?.displayName ?? _user?.email?.split('@').first ?? 'Operator';
 
   Future<bool> signIn({required String email, required String password}) async {
     _isLoading = true;
@@ -61,9 +58,9 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       if (!_firebaseEnabled) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        _demoEmail = email;
-        return true;
+        throw Exception(
+          _statusMessage ?? 'Firebase authentication is unavailable.',
+        );
       }
 
       final auth = _auth;
@@ -87,16 +84,6 @@ class AuthProvider extends ChangeNotifier {
       }
 
       _user = refreshedUser;
-      if (!refreshedUser.emailVerified) {
-        await _sendVerificationEmail(refreshedUser);
-        await auth.signOut();
-        _user = null;
-        _hasAdminClaim = false;
-        throw Exception(
-          'Email not verified yet. A Firebase verification link was sent to ${refreshedUser.email ?? email}.',
-        );
-      }
-
       final tokenResult = await refreshedUser.getIdTokenResult(true);
       _hasAdminClaim = tokenResult.claims?['admin'] == true;
       return true;
@@ -113,10 +100,35 @@ class AuthProvider extends ChangeNotifier {
           message = 'The email address is badly formatted.';
           break;
         case 'too-many-requests':
-          message = 'Too many sign-in attempts. Please wait a moment and try again.';
+          message =
+              'Too many sign-in attempts. Please wait a moment and try again.';
+          break;
+        case 'invalid-credential':
+          message =
+              'The operator email or access key is incorrect. Check the Firebase Authentication user record and try again.';
+          break;
+        case 'operation-not-allowed':
+          message =
+              'Email/password sign-in is disabled for this Firebase project. Enable it in Firebase Console → Authentication → Sign-in method.';
+          break;
+        case 'network-request-failed':
+          message =
+              'Firebase could not be reached. Check your internet connection and any API-key domain restrictions.';
+          break;
+        case 'invalid-api-key':
+        case 'api-key-not-valid':
+          message =
+              'The Firebase web API key is invalid. Update FIREBASE_API_KEY in .env.local.';
+          break;
+        case 'app-not-authorized':
+          message =
+              'This localhost address is not authorized for Firebase Authentication. Add localhost in Firebase Console → Authentication → Settings → Authorized domains.';
           break;
         default:
-          message = 'Sign in failed. Please try again.';
+          final detail = e.message?.trim();
+          message = detail == null || detail.isEmpty
+              ? 'Firebase sign-in failed (${e.code}).'
+              : 'Firebase sign-in failed (${e.code}): $detail';
       }
       throw Exception(message);
     } catch (error) {
@@ -124,21 +136,11 @@ class AuthProvider extends ChangeNotifier {
         rethrow;
       }
       throw Exception(
-        _firebaseEnabled
-            ? 'An unexpected error occurred.'
-            : 'Demo sign in failed.',
+        'An unexpected error occurred.',
       );
     } finally {
       _isLoading = false;
       notifyListeners();
-    }
-  }
-
-  Future<void> _sendVerificationEmail(User user) async {
-    try {
-      await user.sendEmailVerification();
-    } catch (_) {
-      // Email verification remains required even if the helper send fails.
     }
   }
 
@@ -159,9 +161,8 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       if (!_firebaseEnabled) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
         throw Exception(
-          'Password reset email is unavailable in demo mode.',
+          _statusMessage ?? 'Firebase authentication is unavailable.',
         );
       }
 
@@ -204,8 +205,6 @@ class AuthProvider extends ChangeNotifier {
       await _auth!.signOut();
       _user = null;
       _hasAdminClaim = false;
-    } else {
-      _demoEmail = null;
     }
     notifyListeners();
   }

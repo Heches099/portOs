@@ -40,4 +40,5 @@ exec "$FLUTTER_BIN" run -d chrome \
   --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
   --dart-define=FIREBASE_AUTH_DOMAIN="$FIREBASE_AUTH_DOMAIN" \
   --dart-define=FIREBASE_STORAGE_BUCKET="$FIREBASE_STORAGE_BUCKET" \
+  --dart-define=PORT_API_BASE_URL="$PORT_API_BASE_URL" \
   "$@"

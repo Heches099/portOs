@@ -8,59 +8,39 @@ import '../models/crane_telemetry.dart';
 import '../models/delivery_record.dart';
 import '../models/sensor_reading.dart';
 import '../models/terminal_stats.dart';
-import 'demo_port_data.dart';
+import 'ppe_detection_service.dart';
 
 class PortApiService {
   PortApiService({bool firebaseEnabled = false})
       : _firebaseEnabled = firebaseEnabled,
         _firestore = firebaseEnabled ? FirebaseFirestore.instance : null;
 
-  static const String apiBaseUrl = String.fromEnvironment(
-    'PORT_API_BASE_URL',
-    defaultValue: 'https://your-fastapi-instance.com',
-  );
-
   final bool _firebaseEnabled;
   final FirebaseFirestore? _firestore;
-  Future<void>? _seedFuture;
+
+  /// Base URL of the FastAPI backend, shared with the PPE detector.
+  String get backendBaseUrl => PortBackend.baseUrl;
 
   bool get isUsingFirebaseData => _firebaseEnabled && _firestore != null;
-  bool get isUsingPresentationData => !isUsingFirebaseData;
-  bool get isUsingPlaceholderBackend =>
-      !isUsingFirebaseData && apiBaseUrl == 'https://your-fastapi-instance.com';
-
-  Future<void> ensureRealtimeSeedData() async {
-    if (!isUsingFirebaseData) {
-      return;
-    }
-
-    _seedFuture ??= _seedRealtimeDataIfNeeded();
-    await _seedFuture;
-  }
 
   Stream<TerminalStats> getLiveTerminalStats() async* {
     if (!isUsingFirebaseData) {
-      yield* _mockTerminalStats();
+      yield* const Stream<TerminalStats>.empty();
       return;
     }
 
-    await ensureRealtimeSeedData();
     yield* _terminalStatsDocument().snapshots().map((snapshot) {
       final payload = snapshot.data();
-      if (payload == null || payload.isEmpty) {
-        return DemoPortData.snapshot().terminalStats;
-      }
-      return TerminalStats.fromJson(payload);
+      return TerminalStats.fromJson(payload ?? const <String, dynamic>{});
     });
   }
 
   Stream<List<AgvTelemetry>> watchAgvs() async* {
     if (!isUsingFirebaseData) {
-      yield DemoPortData.snapshot().agvs;
+      yield const <AgvTelemetry>[];
       return;
     }
 
-    await ensureRealtimeSeedData();
     yield* _watchCollection(
       collection: 'agvs',
       documentIdKey: 'id',
@@ -71,11 +51,10 @@ class PortApiService {
 
   Stream<List<CraneTelemetry>> watchCranes() async* {
     if (!isUsingFirebaseData) {
-      yield DemoPortData.snapshot().cranes;
+      yield const <CraneTelemetry>[];
       return;
     }
 
-    await ensureRealtimeSeedData();
     yield* _watchCollection(
       collection: 'cranes',
       documentIdKey: 'id',
@@ -86,11 +65,10 @@ class PortApiService {
 
   Stream<List<DeliveryRecord>> watchDeliveries() async* {
     if (!isUsingFirebaseData) {
-      yield DemoPortData.snapshot().deliveries;
+      yield const <DeliveryRecord>[];
       return;
     }
 
-    await ensureRealtimeSeedData();
     yield* _watchCollection(
       collection: 'deliveries',
       documentIdKey: 'containerId',
@@ -103,11 +81,10 @@ class PortApiService {
 
   Stream<List<CameraFeed>> watchCameraFeeds() async* {
     if (!isUsingFirebaseData) {
-      yield DemoPortData.snapshot().cameraFeeds;
+      yield const <CameraFeed>[];
       return;
     }
 
-    await ensureRealtimeSeedData();
     yield* _watchCollection(
       collection: 'camera_feeds',
       documentIdKey: 'id',
@@ -118,11 +95,10 @@ class PortApiService {
 
   Stream<List<SensorReading>> watchSensorReadings() async* {
     if (!isUsingFirebaseData) {
-      yield DemoPortData.snapshot().sensorReadings;
+      yield const <SensorReading>[];
       return;
     }
 
-    await ensureRealtimeSeedData();
     yield* _watchCollection(
       collection: 'sensor_readings',
       documentIdKey: 'id',
@@ -136,66 +112,10 @@ class PortApiService {
     Map<String, dynamic> data,
   ) async {
     if (!isUsingFirebaseData) {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
       return;
     }
 
     await _collection('deliveries').doc(id).set(data, SetOptions(merge: true));
-  }
-
-  Future<void> _seedRealtimeDataIfNeeded() async {
-    final firestore = _firestore;
-    if (firestore == null) {
-      return;
-    }
-
-    final checks = await Future.wait([
-      _terminalStatsDocument().get(),
-      _collection('agvs').limit(1).get(),
-      _collection('cranes').limit(1).get(),
-      _collection('deliveries').limit(1).get(),
-      _collection('camera_feeds').limit(1).get(),
-      _collection('sensor_readings').limit(1).get(),
-    ]);
-
-    final statsDoc = checks[0] as DocumentSnapshot<Map<String, dynamic>>;
-    final collectionsAreEmpty = checks
-        .skip(1)
-        .cast<QuerySnapshot<Map<String, dynamic>>>()
-        .every((snapshot) => snapshot.docs.isEmpty);
-
-    if (statsDoc.exists || !collectionsAreEmpty) {
-      return;
-    }
-
-    final demoSnapshot = DemoPortData.snapshot();
-    final batch = firestore.batch();
-
-    batch.set(_terminalStatsDocument(), demoSnapshot.terminalStats.toJson());
-
-    for (final agv in demoSnapshot.agvs) {
-      batch.set(_collection('agvs').doc(agv.id), agv.toJson());
-    }
-    for (final crane in demoSnapshot.cranes) {
-      batch.set(_collection('cranes').doc(crane.id), crane.toJson());
-    }
-    for (final delivery in demoSnapshot.deliveries) {
-      batch.set(
-        _collection('deliveries').doc(delivery.containerId),
-        delivery.toJson(),
-      );
-    }
-    for (final feed in demoSnapshot.cameraFeeds) {
-      batch.set(_collection('camera_feeds').doc(feed.id), feed.toJson());
-    }
-    for (final reading in demoSnapshot.sensorReadings) {
-      batch.set(
-        _collection('sensor_readings').doc(reading.id),
-        reading.toJson(),
-      );
-    }
-
-    await batch.commit();
   }
 
   CollectionReference<Map<String, dynamic>> _collection(String name) {
@@ -223,17 +143,5 @@ class PortApiService {
       sort(sortedItems);
       return List<T>.unmodifiable(sortedItems);
     });
-  }
-
-  Stream<TerminalStats> _mockTerminalStats() async* {
-    final timeline = DemoPortData.terminalTimeline();
-    var index = 0;
-
-    while (true) {
-      final current = timeline[index % timeline.length];
-      yield current.copyWith(lastSync: DateTime.now());
-      index++;
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
   }
 }

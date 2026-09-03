@@ -27,15 +27,15 @@ class TerminalStats {
 
   factory TerminalStats.initial() {
     return TerminalStats(
-      teuCounter: 14209,
-      efficiency: 98.2,
-      activeCranes: 11,
-      yardUtilization: 82,
-      avgDwellDays: 2.4,
-      activeGroundSpots: 426,
-      liveSources: 8,
-      digitalTwinSector: 'Sector Alpha',
-      predictionWindowHours: 4,
+      teuCounter: 0,
+      efficiency: 0,
+      activeCranes: 0,
+      yardUtilization: 0,
+      avgDwellDays: 0,
+      activeGroundSpots: 0,
+      liveSources: 0,
+      digitalTwinSector: '--',
+      predictionWindowHours: 0,
       lastSync: DateTime.now(),
     );
   }

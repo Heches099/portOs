@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from functools import lru_cache
 from typing import Any
+import io
 
 import firebase_admin
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
@@ -13,6 +14,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from firebase_admin import auth, credentials, firestore
+from pathlib import Path
+
+from fastapi import File, UploadFile
+from PIL import Image
+from ultralytics import YOLO
 
 
 class Settings(BaseSettings):
@@ -29,14 +35,30 @@ class Settings(BaseSettings):
     firebase_storage_bucket: str = ""
     firebase_service_account_path: str = ""
     admin_emails: str = ""
-    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080,https://portos-nextgen.vercel.app"
     ingest_api_key: str = ""
     password_reset_continue_url: str = ""
+    firebase_service_account_b64: str = ""
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+@lru_cache
+def get_ppe_model() -> YOLO:
+    model_path = (
+        Path(__file__).resolve().parent
+        / "ai_engine"
+        / "models"
+        / "best.pt"
+    )
+
+    if not model_path.exists():
+        raise RuntimeError(f"PPE model not found: {model_path}")
+
+    return YOLO(str(model_path))
 
 
 def _csv_to_list(value: str) -> list[str]:
@@ -63,7 +85,19 @@ def get_firebase_app() -> firebase_admin.App:
     if settings.firebase_storage_bucket:
         options["storageBucket"] = settings.firebase_storage_bucket
 
-    if settings.firebase_service_account_path:
+    if settings.firebase_service_account_b64:
+        import base64
+        import json as _json
+
+        try:
+            decoded = base64.b64decode(settings.firebase_service_account_b64)
+            credential_dict = _json.loads(decoded)
+        except Exception as error:  # pragma: no cover - misconfiguration
+            raise RuntimeError(
+                f"BACKED_FIREBASE_SERVICE_ACCOUNT_B64 could not be decoded: {error}"
+            ) from error
+        credential = credentials.Certificate(credential_dict)
+    elif settings.firebase_service_account_path:
         credential = credentials.Certificate(settings.firebase_service_account_path)
     else:
         credential = credentials.ApplicationDefault()
@@ -263,12 +297,6 @@ def require_admin(
         token=decoded,
     )
 
-    if not context.email_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email verification is required before accessing admin APIs.",
-        )
-
     if not context.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -333,17 +361,9 @@ def _terminal_stats_doc() -> firestore.DocumentReference:
 def _get_terminal_stats() -> TerminalStatsModel:
     snapshot = _terminal_stats_doc().get()
     if not snapshot.exists:
-        return TerminalStatsModel(
-            teuCounter=14209,
-            efficiency=98.2,
-            activeCranes=11,
-            yardUtilization=82,
-            avgDwellDays=2.4,
-            activeGroundSpots=426,
-            liveSources=8,
-            digitalTwinSector="Sector Alpha",
-            predictionWindowHours=4,
-            lastSync=_utc_now(),
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Live terminal statistics are not available yet.",
         )
     payload = snapshot.to_dict() or {}
     return _doc_to_model(TerminalStatsModel, payload)  # type: ignore[return-value]
@@ -759,6 +779,90 @@ def ingest_hardware_event(
     }
 
 
+@app.post("/ai/ppe-detect")
+async def detect_ppe(
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only image files are accepted.",
+        )
+
+    try:
+        image_bytes = await file.read()
+
+        if not image_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded image is empty.",
+            )
+
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        model = get_ppe_model()
+
+        results = model.predict(
+            source=image,
+            conf=0.50,
+            verbose=False,
+        )
+
+        result = results[0]
+
+        detections: list[dict[str, Any]] = []
+
+        names = result.names
+
+        if result.boxes is not None:
+            for box in result.boxes:
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
+
+                x1, y1, x2, y2 = [
+                    float(value) for value in box.xyxy[0].tolist()
+                ]
+
+                detections.append(
+                    {
+                        "classId": class_id,
+                        "className": names[class_id],
+                        "confidence": round(confidence, 4),
+                        "boundingBox": {
+                            "x1": round(x1, 2),
+                            "y1": round(y1, 2),
+                            "x2": round(x2, 2),
+                            "y2": round(y2, 2),
+                        },
+                    }
+                )
+
+        counts: dict[str, int] = {}
+
+        for detection in detections:
+            class_name = detection["className"]
+            counts[class_name] = counts.get(class_name, 0) + 1
+
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "imageWidth": image.width,
+            "imageHeight": image.height,
+            "totalDetections": len(detections),
+            "counts": counts,
+            "detections": detections,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PPE detection failed: {error}",
+        ) from error
+
+
 @app.get("/collections/{collection_name}", response_model=list[dict[str, Any]])
 def inspect_collection(
     collection_name: str,
@@ -780,3 +884,14 @@ def inspect_collection(
             detail="That collection is not exposed by the backend.",
         )
     return _read_collection(collection_name)
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run("backed:app", host="0.0.0.0", port=8000, reload=False)
+
+
+if __name__ == "__main__":
+    main()
+

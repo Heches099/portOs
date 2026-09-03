@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/camera_feed.dart';
+import '../models/ppe_detection_result.dart';
+import '../services/ppe_detection_service.dart';
 import 'glass_card.dart';
 
 class LiveCameraSpotlight extends StatefulWidget {
@@ -29,6 +31,11 @@ class _LiveCameraSpotlightState extends State<LiveCameraSpotlight>
   bool _isLoading = true;
   String? _errorMessage;
 
+  final PpeDetectionService _ppeService = PpeDetectionService();
+  bool _isScanningPpe = false;
+  PpeDetectionResult? _ppeResult;
+  String? _ppeError;
+
   bool get _supportsNativePreview =>
       kIsWeb ||
       defaultTargetPlatform == TargetPlatform.android ||
@@ -47,6 +54,7 @@ class _LiveCameraSpotlightState extends State<LiveCameraSpotlight>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _disposeController();
+    _ppeService.dispose();
     super.dispose();
   }
 
@@ -182,6 +190,49 @@ class _LiveCameraSpotlightState extends State<LiveCameraSpotlight>
     }
   }
 
+  Future<void> _scanFrameForPpe() async {
+    final controller = _controller;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        _isScanningPpe) {
+      return;
+    }
+
+    setState(() {
+      _isScanningPpe = true;
+      _ppeError = null;
+    });
+
+    try {
+      final snapshot = await controller.takePicture();
+      final frameBytes = await snapshot.readAsBytes();
+      final result = await _ppeService.detectFromBytes(frameBytes);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isScanningPpe = false;
+        _ppeResult = result;
+      });
+    } on CameraException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isScanningPpe = false;
+        _ppeError = _cameraErrorMessage(error);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isScanningPpe = false;
+        _ppeError = error.toString();
+      });
+    }
+  }
+
   Future<void> _disposeController() async {
     final controller = _controller;
     _controller = null;
@@ -296,230 +347,258 @@ class _LiveCameraSpotlightState extends State<LiveCameraSpotlight>
       borderRadius: 34,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(34),
-        child: AspectRatio(
-          aspectRatio: 1.65,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: hasPreview
-                          ? const [
-                              Color(0xFF030B13),
-                              Color(0xFF0A1C31),
-                              Color(0xFF07111E),
-                            ]
-                          : const [
-                              Color(0xFF08111F),
-                              Color(0xFF11253E),
-                              Color(0xFF050B15),
-                            ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.65,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: hasPreview
+                              ? const [
+                                  Color(0xFF030B13),
+                                  Color(0xFF0A1C31),
+                                  Color(0xFF07111E),
+                                ]
+                              : const [
+                                  Color(0xFF08111F),
+                                  Color(0xFF11253E),
+                                  Color(0xFF050B15),
+                                ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              if (hasPreview)
-                Positioned.fill(
-                    child: _CameraPreviewSurface(controller: controller))
-              else
-                Positioned.fill(
-                  child: Center(
-                    child: Icon(
-                      Icons.videocam_rounded,
-                      color: Colors.white.withValues(alpha: 0.08),
-                      size: 150,
-                    ),
-                  ),
-                ),
-              Positioned(
-                top: 22,
-                left: 22,
-                right: 22,
-                child: Row(
-                  children: [
-                    const _OverlayPulse(color: Color(0xFFFB7185)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        hasPreview
-                            ? 'LIVE DEVICE CAMERA'
-                            : 'PRIMARY VISION STREAM',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.2,
-                            ),
+                  if (hasPreview)
+                    Positioned.fill(
+                        child: _CameraPreviewSurface(controller: controller))
+                  else
+                    Positioned.fill(
+                      child: Center(
+                        child: Icon(
+                          Icons.videocam_rounded,
+                          color: Colors.white.withValues(alpha: 0.08),
+                          size: 150,
+                        ),
                       ),
                     ),
-                    _OverlayChip(
-                      label: '${widget.liveSources} feeds active',
-                      accent: const Color(0xFF2DD4BF),
-                    ),
-                    if (hasPreview) ...[
-                      const SizedBox(width: 10),
-                      _OverlayChip(
-                        label: _previewQualityLabel(),
-                        accent: const Color(0xFFBAE6FD),
-                      ),
-                    ],
-                    const SizedBox(width: 10),
-                    _CameraActionButton(
-                      tooltip: 'Refresh camera',
-                      icon: Icons.refresh_rounded,
-                      onPressed: () => _initializeCamera(),
-                    ),
-                    if (_canSwitchCamera) ...[
-                      const SizedBox(width: 10),
-                      _CameraActionButton(
-                        tooltip: 'Switch camera',
-                        icon: Icons.cameraswitch_rounded,
-                        onPressed: _switchCamera,
-                      ),
-                    ],
-                    if (hasPreview) ...[
-                      const SizedBox(width: 10),
-                      _CameraActionButton(
-                        tooltip: 'Take snapshot',
-                        icon: Icons.photo_camera_rounded,
-                        onPressed: _takeSnapshot,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (_isLoading)
-                const Positioned.fill(
-                  child: Center(
-                    child: SizedBox(
-                      width: 34,
-                      height: 34,
-                      child: CircularProgressIndicator(strokeWidth: 2.8),
-                    ),
-                  ),
-                ),
-              if (_errorMessage != null && !_isLoading)
-                Positioned(
-                  left: 22,
-                  right: 22,
-                  top: 96,
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
-                      color: Colors.black.withValues(alpha: 0.44),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.08),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Positioned(
+                    top: 22,
+                    left: 22,
+                    right: 22,
+                    child: Row(
                       children: [
-                        const Text(
-                          'CAMERA ACCESS STATUS',
-                          style: TextStyle(
-                            color: Color(0xFFBAE6FD),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.4,
+                        const _OverlayPulse(color: Color(0xFFFB7185)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            hasPreview
+                                ? 'LIVE DEVICE CAMERA'
+                                : 'PRIMARY VISION STREAM',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.2,
+                                ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          _errorMessage!,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            height: 1.5,
-                          ),
+                        _OverlayChip(
+                          label: '${widget.liveSources} feeds active',
+                          accent: const Color(0xFF2DD4BF),
                         ),
+                        if (hasPreview) ...[
+                          const SizedBox(width: 10),
+                          _OverlayChip(
+                            label: _previewQualityLabel(),
+                            accent: const Color(0xFFBAE6FD),
+                          ),
+                        ],
+                        const SizedBox(width: 10),
+                        _CameraActionButton(
+                          tooltip: 'Refresh camera',
+                          icon: Icons.refresh_rounded,
+                          onPressed: () => _initializeCamera(),
+                        ),
+                        if (_canSwitchCamera) ...[
+                          const SizedBox(width: 10),
+                          _CameraActionButton(
+                            tooltip: 'Switch camera',
+                            icon: Icons.cameraswitch_rounded,
+                            onPressed: _switchCamera,
+                          ),
+                        ],
+                        if (hasPreview) ...[
+                          const SizedBox(width: 10),
+                          _CameraActionButton(
+                            tooltip: 'Take snapshot',
+                            icon: Icons.photo_camera_rounded,
+                            onPressed: _takeSnapshot,
+                          ),
+                          const SizedBox(width: 10),
+                          _CameraActionButton(
+                            tooltip: 'Scan PPE',
+                            icon: Icons.health_and_safety_rounded,
+                            accent: _isScanningPpe
+                                ? const Color(0xFF2DD4BF)
+                                : Colors.white,
+                            onPressed: () => _scanFrameForPpe(),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                ),
-              Positioned(
-                left: 22,
-                right: 22,
-                bottom: 22,
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.78),
-                        Colors.black.withValues(alpha: 0.22),
-                      ],
+                  if (_isLoading)
+                    const Positioned.fill(
+                      child: Center(
+                        child: SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: CircularProgressIndicator(strokeWidth: 2.8),
+                        ),
+                      ),
                     ),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
+                  if (_errorMessage != null && !_isLoading)
+                    Positioned(
+                      left: 22,
+                      right: 22,
+                      top: 96,
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          color: Colors.black.withValues(alpha: 0.44),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              widget.feed.title,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                            const Text(
+                              'CAMERA ACCESS STATUS',
+                              style: TextStyle(
+                                color: Color(0xFFBAE6FD),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.4,
+                              ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 10),
                             Text(
-                              hasPreview
-                                  ? 'Live device lens  |  ${widget.feed.location}'
-                                  : '${widget.feed.location}  |  waiting for device permission',
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              hasPreview
-                                  ? 'This panel is now using your current device camera for live testing at the highest supported preview quality. '
-                                      'Switch lenses or capture a quick snapshot from here.'
-                                  : 'Use this panel to test real camera access. On desktop, open the app in Chrome for webcam support.',
+                              _errorMessage!,
                               style: const TextStyle(
                                 color: Colors.white70,
-                                height: 1.45,
+                                height: 1.5,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 20),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                    ),
+                  Positioned(
+                    left: 22,
+                    right: 22,
+                    bottom: 22,
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.78),
+                            Colors.black.withValues(alpha: 0.22),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      child: Row(
                         children: [
-                          _OverlayMetric(
-                            label: 'source',
-                            value: hasPreview ? 'device' : 'mock',
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  widget.feed.title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  hasPreview
+                                      ? 'Live device lens  |  ${widget.feed.location}'
+                                      : '${widget.feed.location}  |  waiting for device permission',
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  hasPreview
+                                      ? 'This panel is now using your current device camera for live testing at the highest supported preview quality. '
+                                          'Switch lenses or capture a quick snapshot from here.'
+                                      : 'Use this panel to test real camera access. On desktop, open the app in Chrome for webcam support.',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 12),
-                          _OverlayMetric(
-                            label: 'status',
-                            value: hasPreview
-                                ? 'active'
-                                : (_isLoading ? 'loading' : 'standby'),
+                          const SizedBox(width: 20),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _OverlayMetric(
+                                label: 'source',
+                                value: hasPreview ? 'device' : 'offline',
+                              ),
+                              const SizedBox(height: 12),
+                              _OverlayMetric(
+                                label: 'status',
+                                value: hasPreview
+                                    ? 'active'
+                                    : (_isLoading ? 'loading' : 'standby'),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            _PpeStatusPanel(
+              isScanning: _isScanningPpe,
+              result: _ppeResult,
+              error: _ppeError,
+              onDismiss: () {
+                setState(() {
+                  _ppeResult = null;
+                  _ppeError = null;
+                });
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -660,11 +739,13 @@ class _CameraActionButton extends StatelessWidget {
     required this.tooltip,
     required this.icon,
     required this.onPressed,
+    this.accent = Colors.white,
   });
 
   final String tooltip;
   final IconData icon;
   final Future<void> Function() onPressed;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +764,7 @@ class _CameraActionButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          child: Icon(icon, color: Colors.white, size: 18),
+          child: Icon(icon, color: accent, size: 18),
         ),
       ),
     );
@@ -705,6 +786,256 @@ class _OverlayPulse extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(color: color, blurRadius: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _PpeStatusPanel extends StatelessWidget {
+  const _PpeStatusPanel({
+    required this.isScanning,
+    required this.result,
+    required this.error,
+    required this.onDismiss,
+  });
+
+  final bool isScanning;
+  final PpeDetectionResult? result;
+  final String? error;
+  final VoidCallback onDismiss;
+
+  static const Color _accentTeal = Color(0xFF2DD4BF);
+  static const Color _alertRose = Color(0xFFFB7185);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isScanning && result == null && error == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'PPE STATUS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+              ),
+              if (result != null)
+                _OverlayChip(
+                  label: '${result!.detections.length} objects',
+                  accent: const Color(0xFFBAE6FD),
+                ),
+              if (result != null || error != null) ...[
+                const SizedBox(width: 10),
+                _CameraActionButton(
+                  tooltip: 'Dismiss',
+                  icon: Icons.close_rounded,
+                  onPressed: () async {
+                    onDismiss();
+                  },
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (isScanning)
+            const Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'Analyzing frame with YOLO...',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ],
+            )
+          else if (error != null)
+            Row(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: _alertRose,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    error!,
+                    style: const TextStyle(color: Colors.white70, height: 1.4),
+                  ),
+                ),
+              ],
+            )
+          else
+            _buildResultRows(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultRows() {
+    final detectionResult = result!;
+    final rows = <Widget>[
+      for (final className in PpeDetectionResult.trackedClasses)
+        _PpeStatusRow(
+          className: className,
+          detected: detectionResult.isDetected(className),
+          count: detectionResult.countFor(className),
+          isSafetyEquipment: true,
+        ),
+      for (final className in detectionResult.extraClassNames)
+        _PpeStatusRow(
+          className: className,
+          detected: detectionResult.isDetected(className),
+          count: detectionResult.countFor(className),
+          isSafetyEquipment: false,
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...rows,
+        const SizedBox(height: 14),
+        Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
+        const SizedBox(height: 12),
+        Text(
+          'TOP CONFIDENCE '
+          '${(detectionResult.topConfidence * 100).toStringAsFixed(0)}%',
+          style: const TextStyle(
+            color: _accentTeal,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PpeStatusRow extends StatelessWidget {
+  const _PpeStatusRow({
+    required this.className,
+    required this.detected,
+    required this.count,
+    required this.isSafetyEquipment,
+  });
+
+  final String className;
+  final bool detected;
+  final int count;
+  final bool isSafetyEquipment;
+
+  static const Color _accentTeal = Color(0xFF2DD4BF);
+  static const Color _alertRose = Color(0xFFFB7185);
+
+  IconData get _icon {
+    switch (className) {
+      case 'helmet':
+        return Icons.engineering_rounded;
+      case 'vest':
+        return Icons.checkroom_rounded;
+      case 'head':
+        return Icons.face_retouching_natural_rounded;
+      case 'person':
+        return Icons.person_search_rounded;
+      default:
+        return Icons.category_rounded;
+    }
+  }
+
+  String get _statusLabel {
+    if (detected) {
+      return isSafetyEquipment ? 'Detected' : 'Visible';
+    }
+    return isSafetyEquipment ? 'Missing' : '--';
+  }
+
+  Color get _statusColor {
+    if (detected) {
+      return isSafetyEquipment ? _accentTeal : const Color(0xFFBAE6FD);
+    }
+    return isSafetyEquipment ? _alertRose : Colors.white38;
+  }
+
+  IconData get _statusIcon {
+    if (detected) {
+      return Icons.check_circle_rounded;
+    }
+    return isSafetyEquipment
+        ? Icons.cancel_rounded
+        : Icons.remove_circle_outline;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: _statusColor.withValues(alpha: 0.12),
+              border: Border.all(color: _statusColor.withValues(alpha: 0.24)),
+            ),
+            child: Icon(_icon, color: _statusColor, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              className[0].toUpperCase() + className.substring(1),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            count > 0 ? 'x$count' : '',
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          const SizedBox(width: 10),
+          Icon(_statusIcon, color: _statusColor, size: 16),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 64,
+            child: Text(
+              _statusLabel,
+              style: TextStyle(
+                color: _statusColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
         ],
       ),
     );

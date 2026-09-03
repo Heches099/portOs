@@ -4,16 +4,15 @@ Flutter command-center dashboard with:
 
 - Firebase Auth sign-in
 - Firestore-backed live terminal and operations data
-- Presentation-mode fallback data when Firebase is not configured
 - FastAPI backend support for admin APIs and ingest workflows
 
-## Run In Presentation Mode
+## Run With Real Firebase Data
 
 ```bash
-flutter run -d chrome
+flutter run -d chrome --dart-define-from-file=.env.firebase.json
 ```
 
-If Firebase config is missing, the app stays fully usable with seeded presentation data.
+The Firebase define file must contain the runtime values described below. Without valid Firebase configuration and a verified operator account, the app does not display operational data.
 
 ## Run Against Real Firebase
 
@@ -81,6 +80,17 @@ After that, the quickest real-Firebase run path is:
 ./run_web_firebase.sh
 ```
 
+On Windows, run this from Command Prompt instead:
+
+```bat
+run_web_firebase.bat
+```
+
+Both launchers read `.env.local` and supply the values as Flutter Dart
+defines. Running `flutter run -d chrome` by itself intentionally leaves
+Firebase unavailable, because `.env.local` is not read automatically by a
+Flutter web build.
+
 That command loads values from `.env.local` and passes them through `--dart-define` values without committing them.
 
 Shared values:
@@ -114,7 +124,7 @@ flutter run -d chrome \
 
 ## Firestore Collections
 
-When Firestore is enabled and the database is empty, the app seeds test data into these collections:
+The Flutter app listens for real records in these collections:
 
 - `terminal_stats/current`
 - `agvs`
@@ -123,7 +133,7 @@ When Firestore is enabled and the database is empty, the app seeds test data int
 - `camera_feeds`
 - `sensor_readings`
 
-This lets you sign in and test the real data path immediately.
+Populate these collections through the FastAPI ingest endpoint or your trusted device gateway.
 
 ## Auth And Rules
 

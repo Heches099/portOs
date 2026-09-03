@@ -60,11 +60,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleInitialize() async {
+    final authProvider = context.read<AuthProvider>();
     if (!_validateInputs()) {
       return;
     }
 
-    final authProvider = context.read<AuthProvider>();
     final notificationProvider = context.read<NotificationProvider>();
 
     try {
@@ -78,12 +78,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       notificationProvider.push(
-        title: authProvider.isDemoMode
-            ? 'Command center started in demo mode'
-            : 'Command center initialized',
-        message: authProvider.isDemoMode
-            ? 'Streaming synchronized demo telemetry for ${authProvider.displayName}.'
-            : 'Operator ${authProvider.displayName} authenticated.',
+        title: 'Command center initialized',
+        message: 'Operator ${authProvider.displayName} authenticated.',
       );
     } catch (error) {
       if (!mounted) {
@@ -97,6 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleForgotPassword() async {
+    final authProvider = context.read<AuthProvider>();
     final email = _operatorController.text.trim();
     final emailError = _validateOperator(email);
     if (emailError != null) {
@@ -106,8 +103,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final authProvider = context.read<AuthProvider>();
-
     try {
       await authProvider.sendPasswordResetEmail(email: email);
       if (!mounted) {
@@ -115,11 +110,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            authProvider.isDemoMode
-                ? 'Password reset email is unavailable in demo mode.'
-                : 'Password reset email sent to the registered operator address.',
+            'Password reset email sent to the registered operator address.',
           ),
         ),
       );
@@ -335,9 +328,7 @@ class _LoginPanel extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                authProvider.isDemoMode
-                    ? 'Operator accounts are created manually in Firebase Console. Self-service registration is disabled.'
-                    : 'Operator accounts are created manually in Firebase Console. Verified email is required before live access is granted.',
+                'Operator accounts are created manually in Firebase Console.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white54,
                       height: 1.45,
@@ -377,9 +368,7 @@ class _LoginPanel extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                authProvider.isDemoMode
-                    ? 'Demo mode is active. Supply Firebase config to enable live Auth and Firestore streams.'
-                    : 'Only Firebase-authenticated operators with verified email can reach the live command-center data path.',
+                'Only Firebase-authenticated operators can reach the live command-center data path.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white60,
                       height: 1.5,
@@ -439,7 +428,7 @@ class _LoginNarrative extends StatelessWidget {
           const _NarrativePoint(
             title: 'Firestore-ready sync',
             detail:
-                'The frontend now supports live Firestore snapshots when Firebase is configured, while keeping presentation fallback data in place.',
+                'Live Firestore snapshots are available after Firebase is configured and an operator signs in.',
           ),
           const SizedBox(height: 16),
           const _NarrativePoint(
@@ -461,6 +450,7 @@ class _CommandField extends StatelessWidget {
     required this.onChanged,
     this.errorText,
     this.obscureText = false,
+    this.enabled = true,
   });
 
   final TextEditingController controller;
@@ -469,12 +459,14 @@ class _CommandField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final String? errorText;
   final bool obscureText;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       obscureText: obscureText,
+      enabled: enabled,
       onChanged: onChanged,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(

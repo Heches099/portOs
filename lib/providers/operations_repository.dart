@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 
 import '../models/agv_telemetry.dart';
@@ -8,7 +6,6 @@ import '../models/camera_feed.dart';
 import '../models/crane_telemetry.dart';
 import '../models/delivery_record.dart';
 import '../models/sensor_reading.dart';
-import '../services/demo_port_data.dart';
 import '../services/port_api_service.dart';
 
 class OperationsRepository extends ChangeNotifier {
@@ -18,13 +15,11 @@ class OperationsRepository extends ChangeNotifier {
       _isRealtimeMode = false;
       _statusMessage = 'Firestore data is ready after operator sign-in.';
     } else {
-      refreshMockData();
+      _statusMessage = 'Waiting for Firebase and live operations data.';
     }
   }
 
   final PortApiService _apiService;
-  final Random _random = Random(7);
-
   StreamSubscription<List<AgvTelemetry>>? _agvsSubscription;
   StreamSubscription<List<CraneTelemetry>>? _cranesSubscription;
   StreamSubscription<List<DeliveryRecord>>? _deliveriesSubscription;
@@ -37,7 +32,7 @@ class OperationsRepository extends ChangeNotifier {
   List<CameraFeed> _cameraFeeds = const [];
   List<SensorReading> _sensorReadings = const [];
   bool _isRealtimeMode = false;
-  String _statusMessage = 'Presentation data active.';
+  String _statusMessage = 'Waiting for live operations data.';
 
   List<AgvTelemetry> get agvs => List.unmodifiable(_agvs);
   List<CraneTelemetry> get cranes => List.unmodifiable(_cranes);
@@ -76,13 +71,11 @@ class OperationsRepository extends ChangeNotifier {
     return counts;
   }
 
-  List<double> get agvBatteryTrend => _agvs
-      .map((item) => item.batteryLevel - _random.nextDouble() * 6)
-      .toList(growable: false);
+  List<double> get agvBatteryTrend =>
+      _agvs.map((item) => item.batteryLevel).toList(growable: false);
 
-  List<double> get craneLoadTrend => _cranes
-      .map((item) => item.loadTons + _random.nextDouble() * 1.2)
-      .toList(growable: false);
+  List<double> get craneLoadTrend =>
+      _cranes.map((item) => item.loadTons).toList(growable: false);
 
   List<DeliveryRecord> deliveriesByStatus(String status) => _deliveries
       .where((item) => item.status == status)
@@ -90,7 +83,10 @@ class OperationsRepository extends ChangeNotifier {
 
   Future<void> connect() async {
     if (!_apiService.isUsingFirebaseData) {
-      refreshMockData();
+      _isRealtimeMode = false;
+      _statusMessage =
+          'Firebase is unavailable. Waiting for live operations data.';
+      notifyListeners();
       return;
     }
 
@@ -100,8 +96,6 @@ class OperationsRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _apiService.ensureRealtimeSeedData();
-
       _agvsSubscription = _apiService.watchAgvs().listen(
         (value) {
           _agvs = value;
@@ -152,18 +146,8 @@ class OperationsRepository extends ChangeNotifier {
       await connect();
       return;
     }
-    refreshMockData();
-  }
-
-  void refreshMockData() {
-    final demoSnapshot = DemoPortData.snapshot();
-    _agvs = demoSnapshot.agvs;
-    _cranes = demoSnapshot.cranes;
-    _deliveries = demoSnapshot.deliveries;
-    _cameraFeeds = demoSnapshot.cameraFeeds;
-    _sensorReadings = demoSnapshot.sensorReadings;
-    _isRealtimeMode = false;
-    _statusMessage = 'Presentation data active.';
+    _statusMessage =
+        'Firebase is unavailable. Waiting for live operations data.';
     notifyListeners();
   }
 
@@ -187,22 +171,8 @@ class OperationsRepository extends ChangeNotifier {
   }
 
   void _handleRealtimeError(Object error) {
-    if (_agvs.isEmpty &&
-        _cranes.isEmpty &&
-        _deliveries.isEmpty &&
-        _cameraFeeds.isEmpty &&
-        _sensorReadings.isEmpty) {
-      final demoSnapshot = DemoPortData.snapshot();
-      _agvs = demoSnapshot.agvs;
-      _cranes = demoSnapshot.cranes;
-      _deliveries = demoSnapshot.deliveries;
-      _cameraFeeds = demoSnapshot.cameraFeeds;
-      _sensorReadings = demoSnapshot.sensorReadings;
-    }
-
     _isRealtimeMode = false;
-    _statusMessage =
-        'Realtime Firestore data is unavailable. Showing presentation data.';
+    _statusMessage = 'Realtime Firestore data is unavailable.';
     notifyListeners();
   }
 
