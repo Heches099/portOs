@@ -889,7 +889,7 @@ def inspect_collection(
 def main() -> None:
     import uvicorn
 
-    uvicorn.run("backed:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("backend:app", host="0.0.0.0", port=8000, reload=False)
 
 
 if __name__ == "__main__":
