@@ -33,6 +33,37 @@ pip install -r requirements-backend.txt
 uvicorn backed:app --reload --host 0.0.0.0 --port 8000
 ```
 
+## Realtime mode (real vs simulated)
+
+The backend runs in one of two realtime modes, selected with `BACKED_REALTIME_MODE`
+(default `live`; values: `live | simulate`):
+
+| Mode        | Data source                          | WebSocket hub | Movement acks                 |
+| ----------- | ------------------------------------ | ------------- | ----------------------------- |
+| `live`      | Real ESP32 via the `/hw/*` proxy     | broadcasts telemetry + acks   | from `POST /hw/.../done`     |
+| `simulate`  | Background simulator (dev/demo only) | broadcasts telemetry + acks   | auto-completed by simulator   |
+
+- The Flutter side selects the matching client data source with
+  `--dart-define=PORT_REALTIME_MODE=mock|websocket` (default `mock`).
+- Start the simulator demo with: `BACKED_REALTIME_MODE=simulate uvicorn backed:app --port 8000`.
+- Start real hardware: `BACKED_REALTIME_MODE=live` (the ESP8266/ESP32 keeps
+  polling `GET /hw/command/{machine_id}` and posting `POST /hw/command/{machine_id}/done`).
+
+### New realtime surface
+
+- `GET /ws/machines` / `GET /ws/machines/{machine_id}` — WebSocket fan-out of
+  `telemetry`, `command_ack`, and `machine_event` frames (subscribe with
+  `{"type":"subscribe","machine_ids":[...]}`, heartbeat with `{"type":"ping"}`).
+- `POST /machines/{machine_id}/command` — now accepts the distance-first
+  structured envelope in addition to the legacy shape
+  (`command`, `direction`, `distance_mm`, `speed_mps`, `duration_ms`, `steps`,
+  plus legacy `speed`/`duration`). `emergency_stop` is handled server-side and
+  blocks movement until the machine is re-commanded.
+- `GET /machines/{machine_id}/camera` — camera registry for the machine
+  (`stream_url == null` means the native device camera is used).
+- Movement is distance-first; time fields are treated purely as watchdog /
+  expiry windows. The low-level AGV/crane protocol is unchanged.
+
 ## Firebase policy
 
 - Self-service registration is disabled in the Flutter app.

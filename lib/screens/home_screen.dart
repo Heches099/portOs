@@ -25,8 +25,27 @@ import '../widgets/live_camera_spotlight.dart';
 import '../widgets/operations_pie_analysis_card.dart';
 import '../widgets/operations_reports_view.dart';
 import '../widgets/operator_directory_card.dart';
+import 'agv_control_screen.dart';
+import 'crane_control_screen.dart';
+import 'live_operations_screen.dart';
+import 'machine_status_screen.dart';
+import 'operations_screen.dart';
+import 'trolley_control_screen.dart';
 
-enum _CommandPage { dashboard, vessels, cctv, iot, reports, config }
+enum _CommandPage {
+  live,
+  dashboard,
+  operations,
+  vessels,
+  cctv,
+  iot,
+  reports,
+  machineStatus,
+  agv,
+  crane,
+  trolley,
+  config,
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -36,8 +55,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  _CommandPage _currentPage = _CommandPage.dashboard;
-  final Set<_CommandPage> _visitedPages = {_CommandPage.dashboard};
+  _CommandPage _currentPage = _CommandPage.live;
+  final Set<_CommandPage> _visitedPages = {_CommandPage.live};
 
   void _selectPage(_CommandPage page) {
     setState(() {
@@ -199,6 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
     required ThemeProvider theme,
   }) {
     switch (page) {
+      case _CommandPage.live:
+        return const LiveOperationsScreen();
       case _CommandPage.dashboard:
         return _DashboardView(
           terminal: terminal,
@@ -206,6 +227,8 @@ class _HomeScreenState extends State<HomeScreen> {
           notifications: notifications,
           onRefresh: _refreshCommandCenter,
         );
+      case _CommandPage.operations:
+        return const OperationsScreen();
       case _CommandPage.vessels:
         return _VesselOperationsView(
           terminal: terminal,
@@ -228,6 +251,18 @@ class _HomeScreenState extends State<HomeScreen> {
           operations: operations,
           notifications: notifications,
         );
+      case _CommandPage.machineStatus:
+        return MachineStatusScreen(
+          onOpenAgv: () => _selectPage(_CommandPage.agv),
+          onOpenCrane: () => _selectPage(_CommandPage.crane),
+          onOpenTrolley: () => _selectPage(_CommandPage.trolley),
+        );
+      case _CommandPage.agv:
+        return const AgvControlScreen();
+      case _CommandPage.crane:
+        return const CraneControlScreen();
+      case _CommandPage.trolley:
+        return const TrolleyControlScreen();
       case _CommandPage.config:
         return _ConfigView(
           terminal: terminal,
@@ -1331,52 +1366,56 @@ class _MobileNavigationBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       color: const Color(0xCC08111F),
       borderRadius: 28,
-      child: Row(
-        children: _navItems
-            .map(
-              (item) => Expanded(
-                child: InkWell(
-                  onTap: () => onPageSelected(item.page),
-                  borderRadius: BorderRadius.circular(22),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(22),
-                      color: currentPage == item.page
-                          ? _pageAccent(item.page).withValues(alpha: 0.18)
-                          : Colors.transparent,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          item.icon,
-                          color: currentPage == item.page
-                              ? Colors.white
-                              : Colors.white38,
-                          size: 20,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          item.compactLabel,
-                          style: TextStyle(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _navItems
+              .map(
+                (item) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: InkWell(
+                    onTap: () => onPageSelected(item.page),
+                    borderRadius: BorderRadius.circular(22),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(22),
+                        color: currentPage == item.page
+                            ? _pageAccent(item.page).withValues(alpha: 0.18)
+                            : Colors.transparent,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            item.icon,
                             color: currentPage == item.page
                                 ? Colors.white
                                 : Colors.white38,
-                            fontSize: 10,
-                            fontWeight: currentPage == item.page
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                            size: 20,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            item.compactLabel,
+                            style: TextStyle(
+                              color: currentPage == item.page
+                                  ? Colors.white
+                                  : Colors.white38,
+                              fontSize: 10,
+                              fontWeight: currentPage == item.page
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            )
-            .toList(growable: false),
+              )
+              .toList(growable: false),
+        ),
       ),
     );
   }
@@ -4409,10 +4448,22 @@ class _NavItem {
 
 const _navItems = [
   _NavItem(
+    page: _CommandPage.live,
+    label: 'Live Operations',
+    compactLabel: 'Live Ops',
+    icon: Icons.perm_media_rounded,
+  ),
+  _NavItem(
     page: _CommandPage.dashboard,
     label: 'Dashboard',
     compactLabel: 'Nexus',
     icon: Icons.grid_view_rounded,
+  ),
+  _NavItem(
+    page: _CommandPage.operations,
+    label: 'Operations',
+    compactLabel: 'Ops',
+    icon: Icons.precision_manufacturing_rounded,
   ),
   _NavItem(
     page: _CommandPage.vessels,
@@ -4437,6 +4488,12 @@ const _navItems = [
     label: 'Reports',
     compactLabel: 'Reports',
     icon: Icons.assessment_rounded,
+  ),
+  _NavItem(
+    page: _CommandPage.machineStatus,
+    label: 'Machine Status',
+    compactLabel: 'Status',
+    icon: Icons.monitor_heart_rounded,
   ),
   _NavItem(
     page: _CommandPage.config,
@@ -4474,8 +4531,12 @@ List<_FeedEvent> _buildFeedEvents(
 
 String _pageTitle(_CommandPage page) {
   switch (page) {
+    case _CommandPage.live:
+      return 'Live Operations';
     case _CommandPage.dashboard:
       return 'Command Center';
+    case _CommandPage.operations:
+      return 'Operations';
     case _CommandPage.vessels:
       return 'Berth Orchestration';
     case _CommandPage.cctv:
@@ -4484,6 +4545,14 @@ String _pageTitle(_CommandPage page) {
       return 'Autonomy Mesh';
     case _CommandPage.reports:
       return 'Reporting Center';
+    case _CommandPage.machineStatus:
+      return 'Machine Status';
+    case _CommandPage.agv:
+      return 'AGV Control';
+    case _CommandPage.crane:
+      return 'Crane Control';
+    case _CommandPage.trolley:
+      return 'Trolley Control';
     case _CommandPage.config:
       return 'System Integrity';
   }
@@ -4491,8 +4560,12 @@ String _pageTitle(_CommandPage page) {
 
 String _pageSubtitle(_CommandPage page) {
   switch (page) {
+    case _CommandPage.live:
+      return 'Select a machine to watch its live camera, AI vision, telemetry and controls together — one workspace, one machine.';
     case _CommandPage.dashboard:
       return 'A cinematic live shell for yard flow, predictive pressure, and operator command rhythm.';
+    case _CommandPage.operations:
+      return 'Unified machine-control center for AGV, Crane, and Trolley operations, status, and live activity.';
     case _CommandPage.vessels:
       return 'Crane pairing, manifest readiness, and berth movement presented like an actual ops board.';
     case _CommandPage.cctv:
@@ -4501,6 +4574,14 @@ String _pageSubtitle(_CommandPage page) {
       return 'Fleet motion, sensor health, and lift telemetry fused into one darker tactical view.';
     case _CommandPage.reports:
       return 'Time-filtered operational reports, stored telemetry snapshots, and handoff-ready summaries.';
+    case _CommandPage.machineStatus:
+      return 'Live overview of the port automation fleet, connection state, and last command for every controller.';
+    case _CommandPage.agv:
+      return 'Directional drive, speed, blink signalling, emergency stop, and auto-mode for AGV-01.';
+    case _CommandPage.crane:
+      return 'Whole-crane drive, trolley traverse, hoist lift, electromagnet, and auto-mode for Crane-01.';
+    case _CommandPage.trolley:
+      return 'Trolley traverse, hoist lift, and electromagnet for the Crane-01 trolley unit.';
     case _CommandPage.config:
       return 'Operator identity, stack readiness, and control actions for the real backend transition.';
   }
@@ -4508,8 +4589,12 @@ String _pageSubtitle(_CommandPage page) {
 
 String _pageKicker(_CommandPage page) {
   switch (page) {
+    case _CommandPage.live:
+      return 'Control Center';
     case _CommandPage.dashboard:
       return 'Realtime Nexus';
+    case _CommandPage.operations:
+      return 'Machine Ops';
     case _CommandPage.vessels:
       return 'Berth Matrix';
     case _CommandPage.cctv:
@@ -4518,6 +4603,14 @@ String _pageKicker(_CommandPage page) {
       return 'IoT Mesh';
     case _CommandPage.reports:
       return 'Reporting';
+    case _CommandPage.machineStatus:
+      return 'Fleet Status';
+    case _CommandPage.agv:
+      return 'AGV';
+    case _CommandPage.crane:
+      return 'Crane';
+    case _CommandPage.trolley:
+      return 'Trolley';
     case _CommandPage.config:
       return 'Control Plane';
   }
@@ -4525,8 +4618,12 @@ String _pageKicker(_CommandPage page) {
 
 Color _pageAccent(_CommandPage page) {
   switch (page) {
+    case _CommandPage.live:
+      return const Color(0xFF2DD4BF);
     case _CommandPage.dashboard:
       return const Color(0xFF38BDF8);
+    case _CommandPage.operations:
+      return const Color(0xFF3B82F6);
     case _CommandPage.vessels:
       return const Color(0xFF60A5FA);
     case _CommandPage.cctv:
@@ -4534,6 +4631,14 @@ Color _pageAccent(_CommandPage page) {
     case _CommandPage.iot:
       return const Color(0xFFF59E0B);
     case _CommandPage.reports:
+      return const Color(0xFF2DD4BF);
+    case _CommandPage.machineStatus:
+      return const Color(0xFF818CF8);
+    case _CommandPage.agv:
+      return const Color(0xFF38BDF8);
+    case _CommandPage.crane:
+      return const Color(0xFFF472B6);
+    case _CommandPage.trolley:
       return const Color(0xFF2DD4BF);
     case _CommandPage.config:
       return const Color(0xFFF472B6);

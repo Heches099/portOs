@@ -51,6 +51,25 @@ double readDouble(dynamic value, {double fallback = 0}) {
   return fallback;
 }
 
+/// Parses a numeric value that may legitimately be absent ("unavailable").
+/// Returns null for null, non-numeric, empty, or NaN/Infinity markers.
+double? readNullableDouble(dynamic value) {
+  if (value is num && value.isFinite) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') {
+      return null;
+    }
+    final parsed = double.tryParse(trimmed);
+    if (parsed != null && parsed.isFinite) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 int readInt(dynamic value, {int fallback = 0}) {
   if (value is num) {
     return value.toInt();

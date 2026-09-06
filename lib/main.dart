@@ -4,12 +4,14 @@ import 'package:provider/provider.dart';
 import 'app_bootstrap.dart';
 import 'providers/auth_provider.dart';
 import 'providers/automation_hub_provider.dart';
+import 'providers/machine_selection_controller.dart';
 import 'providers/notification_provider.dart';
 import 'providers/operations_repository.dart';
 import 'providers/terminal_state_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'services/machine_control_service.dart';
 import 'services/port_api_service.dart';
 
 Future<void> main() async {
@@ -33,6 +35,7 @@ class MyApp extends StatelessWidget {
             firebaseEnabled: bootstrapState.isFirebaseAvailable,
           ),
         ),
+        Provider(create: (_) => MachineControlService()),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
             firebaseEnabled: bootstrapState.isFirebaseAvailable,
@@ -50,6 +53,9 @@ class MyApp extends StatelessWidget {
           create: (context) => TerminalStateProvider(
             apiService: context.read<PortApiService>(),
           ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => MachineSelectionController(),
         ),
       ],
       child: Consumer2<ThemeProvider, AuthProvider>(
