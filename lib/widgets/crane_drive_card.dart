@@ -7,6 +7,8 @@ import '../providers/theme_provider.dart';
 import '../services/machine_control_service.dart';
 import 'glass_card.dart';
 
+enum CraneDriveMode { joystick, timed }
+
 class CraneDriveCard extends StatefulWidget {
   const CraneDriveCard({super.key, required this.machineId, required this.service});
 
@@ -18,12 +20,15 @@ class CraneDriveCard extends StatefulWidget {
 }
 
 class _CraneDriveCardState extends State<CraneDriveCard> {
+  CraneDriveMode _mode = CraneDriveMode.joystick;
   double _speed = 100;
   double _duration = 3;
   bool _executing = false;
   String? _lastError;
+  String? _activeMove;
   DriveStatus? _driveStatus;
   Timer? _statusTimer;
+  Timer? _stopTimer;
 
   @override
   void initState() {
@@ -35,6 +40,7 @@ class _CraneDriveCardState extends State<CraneDriveCard> {
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _stopTimer?.cancel();
     super.dispose();
   }
 
@@ -61,6 +67,40 @@ class _CraneDriveCardState extends State<CraneDriveCard> {
     } finally {
       if (mounted) setState(() => _executing = false);
     }
+  }
+
+  void _stopNow() {
+    if (_stopTimer != null) {
+      _stopTimer!.cancel();
+      _stopTimer = null;
+    }
+    setState(() => _activeMove = null);
+    _sendDrive('stop');
+  }
+
+  // Joystick: drive is a single start on press, stop on release. The crane
+  // drive ESP keeps moving until a 'stop' arrives.
+  void _joystickStart(String move) {
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    setState(() => _activeMove = move);
+    _sendDrive(move);
+  }
+
+  void _joystickEnd() {
+    if (_activeMove != null) _stopNow();
+  }
+
+  // Timed: start moving, auto-stop after the configured duration.
+  void _timedMove(String move) {
+    _sendDrive(move);
+    _stopTimer?.cancel();
+    setState(() => _activeMove = move);
+    _stopTimer = Timer(Duration(milliseconds: (_duration * 1000).round()), () {
+      _stopTimer = null;
+      setState(() => _activeMove = null);
+      _sendDrive('stop');
+    });
   }
 
   @override
@@ -126,10 +166,66 @@ class _CraneDriveCardState extends State<CraneDriveCard> {
           ),
           const SizedBox(height: 10),
           _CraneDirectionPad(
+            mode: _mode,
             executing: _executing,
-            onDrive: _sendDrive,
+            onJoystickStart: _joystickStart,
+            onJoystickEnd: _joystickEnd,
+            onTimedMove: _timedMove,
+            onStop: _stopNow,
           ),
+          if (_activeMove != null) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppPalette.success.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_arrow_rounded, size: 14, color: AppPalette.success),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Moving $_activeMove at ${_speed.toInt()}%',
+                      style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700, color: AppPalette.success,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _mode == CraneDriveMode.joystick
+                    ? 'Press and hold to move, release to stop'
+                    : 'Move for a set time then auto-stop',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+              ),
+              _ModeToggle(
+                mode: _mode,
+                onChanged: (m) {
+                  _stopTimer?.cancel();
+                  _stopTimer = null;
+                  setState(() {
+                    _mode = m;
+                    _activeMove = null;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
 
           _SliderRow(
             label: 'Speed',
@@ -140,16 +236,63 @@ class _CraneDriveCardState extends State<CraneDriveCard> {
             suffix: '${_speed.toInt()}',
             onChanged: (v) => setState(() => _speed = v),
           ),
-          _SliderRow(
-            label: 'Duration',
-            value: _duration,
-            min: 0.5,
-            max: 10,
-            divisions: 19,
-            suffix: '${_duration.toStringAsFixed(1)}s',
-            onChanged: (v) => setState(() => _duration = v),
-          ),
+          if (_mode == CraneDriveMode.timed) ...[
+            const SizedBox(height: 8),
+            _SliderRow(
+              label: 'Duration',
+              value: _duration,
+              min: 0.5,
+              max: 10,
+              divisions: 19,
+              suffix: '${_duration.toStringAsFixed(1)}s',
+              onChanged: (v) => setState(() => _duration = v),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({required this.mode, required this.onChanged});
+  final CraneDriveMode mode;
+  final ValueChanged<CraneDriveMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey[100],
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: CraneDriveMode.values.map((m) {
+          final active = mode == m;
+          return GestureDetector(
+            onTap: () => onChanged(m),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: active ? AppPalette.accent : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                m == CraneDriveMode.joystick ? 'Joystick' : 'Timed',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : (isDark ? Colors.white54 : Colors.grey[600]),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -190,15 +333,41 @@ class _OnlineIndicator extends StatelessWidget {
 }
 
 class _CraneDirectionPad extends StatelessWidget {
-  const _CraneDirectionPad({required this.executing, required this.onDrive});
+  const _CraneDirectionPad({
+    required this.mode,
+    required this.executing,
+    required this.onJoystickStart,
+    required this.onJoystickEnd,
+    required this.onTimedMove,
+    required this.onStop,
+  });
+
+  final CraneDriveMode mode;
   final bool executing;
-  final void Function(String) onDrive;
+  final void Function(String) onJoystickStart;
+  final VoidCallback onJoystickEnd;
+  final void Function(String) onTimedMove;
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey[100];
     final borderColor = isDark ? Colors.white.withValues(alpha: 0.12) : Colors.grey[300]!;
+    final joystick = mode == CraneDriveMode.joystick;
+
+    Widget moveBtn(String move, IconData icon, {Color? color}) {
+      return _PadBtn(
+        icon: icon,
+        enabled: !executing,
+        onJoystickStart: joystick ? () => onJoystickStart(move) : null,
+        onJoystickEnd: joystick ? onJoystickEnd : null,
+        onTap: joystick ? null : () => onTimedMove(move),
+        bg: bgColor,
+        border: borderColor,
+        iconColor: color,
+      );
+    }
 
     return Column(
       children: [
@@ -206,29 +375,31 @@ class _CraneDirectionPad extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(width: 56),
-            _PadBtn(icon: Icons.arrow_upward_rounded, enabled: !executing, onTap: () => onDrive('forward'), bg: bgColor, border: borderColor),
+            moveBtn('forward', Icons.arrow_upward_rounded),
             const SizedBox(width: 56),
           ],
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _PadBtn(icon: Icons.arrow_back_rounded, enabled: !executing, onTap: () => onDrive('backward'), bg: bgColor, border: borderColor),
+            moveBtn('backward', Icons.arrow_back_rounded),
             _PadBtn(
-              icon: Icons.stop_rounded, enabled: !executing,
-              onTap: () => onDrive('stop'),
+              icon: Icons.stop_rounded,
+              enabled: !executing,
+              onJoystickStart: joystick ? onStop : null,
+              onTap: joystick ? null : onStop,
               bg: AppPalette.coral.withValues(alpha: 0.12),
               border: AppPalette.coral.withValues(alpha: 0.3),
               iconColor: AppPalette.coral,
             ),
-            _PadBtn(icon: Icons.arrow_forward_rounded, enabled: !executing, onTap: () => onDrive('forward'), bg: bgColor, border: borderColor),
+            moveBtn('forward', Icons.arrow_forward_rounded),
           ],
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const SizedBox(width: 56),
-            _PadBtn(icon: Icons.arrow_downward_rounded, enabled: !executing, onTap: () => onDrive('backward'), bg: bgColor, border: borderColor),
+            moveBtn('backward', Icons.arrow_downward_rounded),
             const SizedBox(width: 56),
           ],
         ),
@@ -238,20 +409,36 @@ class _CraneDirectionPad extends StatelessWidget {
 }
 
 class _PadBtn extends StatelessWidget {
-  const _PadBtn({required this.icon, required this.enabled, required this.onTap, this.bg, this.border, this.iconColor});
+  const _PadBtn({
+    required this.icon,
+    required this.enabled,
+    this.onJoystickStart,
+    this.onJoystickEnd,
+    this.onTap,
+    this.bg,
+    this.border,
+    this.iconColor,
+  });
+
   final IconData icon;
   final bool enabled;
-  final VoidCallback onTap;
+  final VoidCallback? onJoystickStart;
+  final VoidCallback? onJoystickEnd;
+  final VoidCallback? onTap;
   final Color? bg;
   final Color? border;
   final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
+    final hasHold = onJoystickStart != null && onJoystickEnd != null;
     return Padding(
       padding: const EdgeInsets.all(4),
       child: GestureDetector(
-        onTap: enabled ? onTap : null,
+        onTapDown: hasHold ? (_) => onJoystickStart!() : null,
+        onTapUp: hasHold ? (_) => onJoystickEnd!() : null,
+        onTapCancel: hasHold ? onJoystickEnd : null,
+        onTap: (!hasHold && enabled && onTap != null) ? onTap : null,
         child: Container(
           width: 48, height: 48,
           decoration: BoxDecoration(

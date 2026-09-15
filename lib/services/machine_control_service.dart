@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../models/commission_status.dart';
 import '../models/machine_command.dart';
 import '../models/machine_status.dart';
 import 'ppe_detection_service.dart';
@@ -75,6 +76,24 @@ class MachineControlService {
   Future<DriveStatus> fetchDriveStatus(String machineId) async {
     final data = await _get('/machines/$machineId/drive/status');
     return DriveStatus.fromJson(data);
+  }
+
+  /// Commissioning-mode status: current level, unlimited flag and the full
+  /// safety preflight breakdown.
+  Future<CommissionStatus> fetchCommissionStatus(String machineId) async {
+    final data = await _get('/machines/$machineId/commission');
+    return CommissionStatus.fromJson(data);
+  }
+
+  /// Advance commissioning to the next approved movement level. May fail with
+  /// HTTP 409 when the preflight checks do not pass (or the bypass flag is off).
+  Future<void> advanceCommission(String machineId) async {
+    await _post('/machines/$machineId/commission/advance', {});
+  }
+
+  /// Reset commissioning back to fully blocked (0 mm).
+  Future<void> resetCommission(String machineId) async {
+    await _post('/machines/$machineId/commission/reset', {});
   }
 
   Future<List<MachineCommand>> fetchCommandHistory(String machineId) async {

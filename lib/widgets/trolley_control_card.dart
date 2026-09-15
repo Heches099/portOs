@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/machine_command.dart';
@@ -21,6 +22,46 @@ class _TrolleyControlCardState extends State<TrolleyControlCard> {
   bool _magnetOn = false;
   bool _executing = false;
   String? _lastError;
+  int? _hoistPosition;
+  Timer? _hoistTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshHoist();
+    _hoistTimer = Timer.periodic(const Duration(seconds: 4), (_) => _refreshHoist());
+  }
+
+  @override
+  void dispose() {
+    _hoistTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshHoist() async {
+    try {
+      final detail = await widget.service.fetchMachineDetail(widget.machineId);
+      if (!mounted) return;
+      final parsed = _parseHoistPosition(detail.notes);
+      if (parsed != _hoistPosition) setState(() => _hoistPosition = parsed);
+    } catch (_) {}
+  }
+
+  static int? _parseHoistPosition(String notes) {
+    if (notes.isEmpty) return null;
+    final part = notes
+        .split(';')
+        .where((p) => p.trim().startsWith('hoist:') || p.trim().startsWith('hoist='))
+        .toList();
+    if (part.isEmpty) return null;
+    final field = part.first.trim();
+    final colon = field.indexOf(':');
+    final eq = field.indexOf('=');
+    final sep = colon >= 0 ? colon : eq;
+    if (sep < 0) return null;
+    final n = int.tryParse(field.substring(sep + 1).trim());
+    return (n != null && n.isFinite) ? n : null;
+  }
 
   Future<void> _sendCommand(String command, {int? steps}) async {
     if (_executing) return;
@@ -79,6 +120,34 @@ class _TrolleyControlCardState extends State<TrolleyControlCard> {
           _ControlSection(
             title: 'Hoist',
             children: [
+              if (_hoistPosition != null) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppPalette.warning.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.height_rounded, size: 13, color: AppPalette.warning),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Hoist position: $_hoistPosition steps',
+                            style: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w600, color: AppPalette.warning,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               _ThreeButtonRow(
                 leftLabel: 'DOWN',
                 rightLabel: 'UP',

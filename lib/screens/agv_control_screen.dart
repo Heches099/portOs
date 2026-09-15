@@ -7,6 +7,7 @@ import '../providers/theme_provider.dart';
 import '../services/machine_control_service.dart';
 import '../widgets/agv_control_card.dart';
 import '../widgets/command_history_table.dart';
+import '../widgets/commissioning_card.dart';
 import '../widgets/machine_control_widgets.dart';
 
 class AgvControlScreen extends StatefulWidget {
@@ -86,6 +87,8 @@ class _AgvControlScreenState extends State<AgvControlScreen> {
               final controls = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  CommissioningCard(machineId: _agvId, service: _service),
+                  const SizedBox(height: 16),
                   AgvControlCard(machineId: _agvId, service: _service),
                   const SizedBox(height: 16),
                   AutoModeCard(

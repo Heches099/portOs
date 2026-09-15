@@ -6,6 +6,7 @@ import '../models/machine_status.dart';
 import '../providers/theme_provider.dart';
 import '../services/machine_control_service.dart';
 import '../widgets/command_history_table.dart';
+import '../widgets/commissioning_card.dart';
 import '../widgets/crane_drive_card.dart';
 import '../widgets/machine_control_widgets.dart';
 import '../widgets/trolley_control_card.dart';
@@ -83,6 +84,8 @@ class _CraneControlScreenState extends State<CraneControlScreen> {
               final controls = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  CommissioningCard(machineId: _craneId, service: _service),
+                  const SizedBox(height: 16),
                   CraneDriveCard(machineId: _craneId, service: _service),
                   const SizedBox(height: 16),
                   TrolleyControlCard(machineId: _craneId, service: _service),

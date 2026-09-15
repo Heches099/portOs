@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # "live"     -> real hardware via the ESP32 polling proxy (default).
     # "simulate" -> background simulation of fleet telemetry + command acks.
     realtime_mode: str = "live"
+    # DEV/bench-only escape hatch: when true, commissioning can be advanced to
+    # UNLIMITED without the encoder/sensor/dashboard preflight passing. Defaults
+    # to disabled; the operator must still explicitly POST the advance call.
+    allow_unconditional_commission: bool = False
     # Real camera stream URLs for the fleet (RTSP / MJPEG / HLS). Empty string
     # = machine has no remote feed, so the Flutter panel uses the local device
     # camera preview. These are the ONLY source of camera URLs; nothing is
@@ -312,6 +316,7 @@ class MachineCommandEnvelopeRequest(ApiModel):
     steps: int | None = None
     speed: int | None = None
     duration: int | None = None
+    params: str | None = None
 
 
 class MachineDriveRequest(ApiModel):
@@ -1806,6 +1811,19 @@ async def send_machine_command(
         speed_fraction = float((body.speed_mps or 0.2) / 0.2)
         speed_cmd = max(10, min(255, int(round(200 * speed_fraction))))
 
+    # Legacy dash wire: params is "speed:duration" (e.g. "200:300") or a bare
+    # duration (e.g. "300"). Parsed only when the structured fields are unset,
+    # so it never overrides an explicit speed/duration/distance command.
+    if body.params:
+        pieces = body.params.split(":")
+        if len(pieces) >= 2:
+            if speed_cmd is None and pieces[0].strip().isdigit():
+                speed_cmd = int(pieces[0].strip())
+            if duration_used is None and pieces[1].strip().isdigit():
+                duration_used = int(pieces[1].strip())
+        elif duration_used is None and body.params.strip().isdigit():
+            duration_used = int(body.params.strip())
+
     # Commissioning cap: in LIVE mode movement starts at 0 mm and only grows
     # through the preflight-approved levels. Simulate mode is unlimited.
     if is_distance_command:
@@ -1934,7 +1952,10 @@ def send_drive_command(
 ) -> dict[str, Any]:
     state = _get_machine_state(machine_id)
 
-    if body.move not in ("forward", "backward", "left", "right", "stop"):
+    # The recovered dash web's crane pad sends move='reverse'; map it to the
+    # native 'backward' so the dash UI and the PortOS app drive identically.
+    movement = "backward" if body.move == "reverse" else body.move
+    if movement not in ("forward", "backward", "left", "right", "stop"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid drive move: {body.move}",
@@ -1947,7 +1968,7 @@ def send_drive_command(
     record = {
         "id": str(command_id),
         "machineId": machine_id,
-        "command": body.move,
+        "command": movement,
         "params": params_str,
         "status": "pending",
         "createdAt": now,
@@ -1955,7 +1976,7 @@ def send_drive_command(
 
     state.command_queue.append({
         "id": command_id,
-        "command": body.move,
+        "command": movement,
         "params": params_str,
     })
     state.command_history.insert(0, record)
@@ -1964,7 +1985,7 @@ def send_drive_command(
     state.status = "running"
     state.lastUpdated = now
 
-    _record_activity(state, "running", f"Drive: {body.move} at {body.speed}%")
+    _record_activity(state, "running", f"Drive: {movement} at {body.speed}%")
 
     return {"status": "sent", "commandId": command_id}
 
@@ -2245,6 +2266,30 @@ async def hw_estop_input(
     return {"status": "estop_released"}
 
 
+# ─── Legacy dash wire (optional) ────────────────────────────────────────────
+# The first-generation ESP8266 firmware (dash system) polls these /api/agv/*
+# paths on port 5000 instead of the /hw/* proxy.  These thin aliases let an
+# already-flashed board talk to the PortOS backend with no re-flash.
+@app.get("/api/agv/command/{machine_id}")
+def legacy_dash_poll_command(machine_id: str) -> dict[str, Any]:
+    return hw_poll_command(machine_id)
+
+
+@app.post("/api/agv/command/{machine_id}/done")
+async def legacy_dash_command_done(
+    machine_id: str, body: MachineCommandDoneRequest
+) -> dict[str, Any]:
+    return await hw_command_done(machine_id, body)
+
+
+@app.post("/api/agv/status/{machine_id}")
+async def legacy_dash_report_status(
+    machine_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    return await hw_report_status(machine_id, body)
+
+
+# ─── Machine cameras ─────────────────────────────────────────────────────────
 @app.get("/machines/{machine_id}/camera")
 def get_machine_camera(machine_id: str) -> dict[str, Any]:
     state = _get_machine_state(machine_id)
@@ -2314,6 +2359,11 @@ def _commission_preflight(state: MachineState) -> dict[str, Any]:
 
 
 def _next_commission_level(current: int) -> int | None:
+    if current == -1:
+        return None
+    hard_limit = max(level for level in COMMISSION_LEVELS_MM if level > 0)
+    if current >= hard_limit:
+        return -1
     for level in COMMISSION_LEVELS_MM:
         if level > current:
             return level
@@ -2348,19 +2398,21 @@ def advance_commission(machine_id: str) -> dict[str, Any]:
             "commissionDistanceMm": state.commission_distance_mm,
         }
     if not simulate and not preflight["all_ok"]:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "Preflight checks failed - commissioning blocked.",
-                "preflight": preflight,
-            },
-        )
+        if not get_settings().allow_unconditional_commission:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "Preflight checks failed - commissioning blocked.",
+                    "preflight": preflight,
+                },
+            )
     state.commission_distance_mm = next_level
     _record_activity(
         state,
         "commission",
         f"Commissioning advanced to "
-        f"{'UNLIMITED' if next_level == -1 else f'{next_level} mm'}",
+        f"{'UNLIMITED' if next_level == -1 else f'{next_level} mm'}"
+        f"{'' if (simulate or preflight['all_ok']) else ' (unconditional bypass)'}",
     )
     return {
         "status": "advanced",
@@ -2455,9 +2507,13 @@ def inspect_collection(
 
 
 def main() -> None:
+    import os
     import uvicorn
 
-    uvicorn.run("backed:app", host="0.0.0.0", port=8000, reload=True)
+    # Legacy first-gen ESP8266 firmware polls port 5000; default to it for
+    # zero-reflash drives. Override with PORT=8000 for the Render/dev path.
+    port = int(os.getenv("PORT", "5000"))
+    uvicorn.run("backed:app", host="0.0.0.0", port=port, reload=True)
 
 
 if __name__ == "__main__":

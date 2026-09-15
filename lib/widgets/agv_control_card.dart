@@ -148,6 +148,14 @@ class _AgvControlCardState extends State<AgvControlCard> {
             executing: _executing,
             onPressed: () => _sendCommand('blink', speed: 3),
           ),
+          const SizedBox(height: 10),
+          _QuickButton(
+            label: 'HOME',
+            icon: Icons.home_outlined,
+            color: AppPalette.accent,
+            executing: _executing,
+            onPressed: () => _sendCommand('home'),
+          ),
           const SizedBox(height: 12),
 
           EmergencyStopButton(onPressed: _emergencyStop, isExecuting: _executing),

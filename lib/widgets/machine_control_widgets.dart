@@ -252,6 +252,11 @@ class AutoModeCard extends StatefulWidget {
 class _AutoModeCardState extends State<AutoModeCard> {
   AutoModeStatus? _status;
   bool _busy = false;
+  bool _showConfig = false;
+  double _cargo = 5;
+  double _loadSec = 2;
+  double _moveSec = 2;
+  double _unloadSec = 2;
   String? _error;
   Timer? _timer;
 
@@ -282,7 +287,15 @@ class _AutoModeCardState extends State<AutoModeCard> {
       _error = null;
     });
     try {
-      await widget.service.startAutoMode(widget.machineId, const AutoModeRequest(cargo: 5));
+      await widget.service.startAutoMode(
+        widget.machineId,
+        AutoModeRequest(
+          cargo: _cargo.round(),
+          loadTime: (_loadSec * 1000).round(),
+          moveTime: (_moveSec * 1000).round(),
+          unloadTime: (_unloadSec * 1000).round(),
+        ),
+      );
       await _refresh();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -367,7 +380,75 @@ class _AutoModeCardState extends State<AutoModeCard> {
               style: const TextStyle(color: AppPalette.coral, fontSize: 11),
             ),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => setState(() => _showConfig = !_showConfig),
+                icon: Icon(
+                  _showConfig ? Icons.expand_less_rounded : Icons.settings_outlined,
+                  size: 15,
+                ),
+                label: Text(
+                  _showConfig ? 'Hide plan' : 'Plan settings',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_cargo.round()} units',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white70 : Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+          if (_showConfig) ...[
+            const SizedBox(height: 4),
+            _AutoConfigSlider(
+              label: 'Cargo units',
+              value: _cargo,
+              min: 1,
+              max: 30,
+              divisions: 29,
+              suffix: '${_cargo.round()}',
+              onChanged: (v) => setState(() => _cargo = v),
+            ),
+            _AutoConfigSlider(
+              label: 'Load time',
+              value: _loadSec,
+              min: 0.5,
+              max: 15,
+              divisions: 29,
+              suffix: '${_loadSec.toStringAsFixed(1)}s',
+              onChanged: (v) => setState(() => _loadSec = v),
+            ),
+            _AutoConfigSlider(
+              label: 'Move time',
+              value: _moveSec,
+              min: 0.5,
+              max: 15,
+              divisions: 29,
+              suffix: '${_moveSec.toStringAsFixed(1)}s',
+              onChanged: (v) => setState(() => _moveSec = v),
+            ),
+            _AutoConfigSlider(
+              label: 'Unload time',
+              value: _unloadSec,
+              min: 0.5,
+              max: 15,
+              divisions: 29,
+              suffix: '${_unloadSec.toStringAsFixed(1)}s',
+              onChanged: (v) => setState(() => _unloadSec = v),
+            ),
+          ],
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
@@ -411,6 +492,68 @@ class _AutoModeCardState extends State<AutoModeCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AutoConfigSlider extends StatelessWidget {
+  const _AutoConfigSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.suffix,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final String suffix;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        SizedBox(
+          width: 88,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white54 : Colors.grey[600],
+            ),
+          ),
+        ),
+        Expanded(
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            activeColor: AppPalette.accent,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 46,
+          child: Text(
+            suffix,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white70 : Colors.grey[700],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
