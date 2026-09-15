@@ -63,3 +63,6 @@ firebase-service-account.json
 *.pem
 *.key
 firebase-debug.log
+
+# Firebase Hosting runtime cache
+.firebase/

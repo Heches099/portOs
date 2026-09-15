@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 import '../models/ppe_detection_result.dart';
 
@@ -16,7 +16,9 @@ class PortBackend {
   /// Defaults to a local FastAPI server for development.
   static const String baseUrl = String.fromEnvironment(
     'PORT_API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: kIsWeb
+        ? 'https://portos-nwk9.onrender.com'
+        : 'http://127.0.0.1:8000',
   );
 }
 

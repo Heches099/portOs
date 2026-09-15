@@ -450,8 +450,7 @@ class _CommandField extends StatelessWidget {
     required this.onChanged,
     this.errorText,
     this.obscureText = false,
-    this.enabled = true,
-  });
+  }) : enabled = true;
 
   final TextEditingController controller;
   final String hint;

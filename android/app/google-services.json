@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "877769589306",
+    "project_id": "portos-nextgen-harris-20260328",
+    "storage_bucket": "portos-nextgen-harris-20260328.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:877769589306:android:f3afc865fe3a1c9bd66b03",
+        "android_client_info": {
+          "package_name": "com.example.tech"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "877769589306-hrfe7cg7qjgbp72ko199fn2ekv87mk46.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCn6okdKfNWY-actWAtQLxmguYA_EHgHG4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "877769589306-hrfe7cg7qjgbp72ko199fn2ekv87mk46.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

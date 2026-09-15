@@ -1,8 +1,1 @@
-{
-  "firestore": {
-    "rules": "firestore.rules"
-  },
-  "storage": {
-    "rules": "storage.rules"
-  }
-}
+{"firestore":{"rules":"firestore.rules"},"storage":{"rules":"storage.rules"},"hosting":{"public":"build/web","ignore":["firebase.json","**/.*","**/node_modules/**"],"headers":[{"source":"/","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},{"source":"/index.html","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},{"source":"/flutter_bootstrap.js","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},{"source":"/flutter_service_worker.js","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},{"source":"/version.json","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]}],"rewrites":[{"source":"**","destination":"/index.html"}]},"flutter":{"platforms":{"android":{"default":{"projectId":"portos-nextgen-harris-20260328","appId":"1:877769589306:android:f3afc865fe3a1c9bd66b03","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"portos-nextgen-harris-20260328","configurations":{"web":"1:877769589306:web:7ecda5d28f21b581d66b03"}}}}}}
